@@ -1,0 +1,146 @@
+# Space Invaders - .gitignore
+
+# Archivos de compilación
+*.o
+*.obj
+*.exe
+*.out
+*.app
+*.i*86
+*.x86_64
+*.hex
+
+# Ejecutables
+breakout
+breakout.exe
+tetris
+tetris.exe
+
+# Archivos de debug
+*.dSYM/
+*.su
+*.idb
+*.pdb
+
+# Archivos de preprocesador
+*.i
+
+# Archivos de ensamblador
+*.s
+
+# Librerías precompiladas
+*.lib
+*.a
+*.la
+*.lo
+
+# Archivos de Allegro temporales (si se generan)
+*.log
+
+# Archivos de sistema macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# Archivos de sistema Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# Archivos de sistema Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# Visual Studio Code
+# Incluir .vscode para facilitar la configuración del proyecto
+*.code-workspace
+
+# Archivos de configuración local (si los hay)
+local_config.h
+
+# Archivos de distribución
+*.tar
+*.tar.gz
+*.tgz
+*.zip
+*.rar
+*.7z
+dist/
+*.dll
+
+# Dependencias temporales
+deps/
+tmp/
+temp/
+
+# Archivos de caché
+*.cache
+
+# Archivos de Make
+.depend
+Makefile.bak
+
+# Valgrind
+*.valgrind
+vgcore.*
+
+# Core dumps
+core
+core.*
+
+# GDB
+.gdb_history
+
+# Clangd (Language Server)
+.clangd/
+compile_commands.json
+
+# CMake (por si en el futuro se usa)
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+install_manifest.txt
+
+# Editor backups
+*~
+*.swp
+*.swo
+*.bak
+*.orig
+
+# Logs
+*.log
+logs/
+
+highscore.dat
+highscores.dat
+
+breakout-c
+space-invaders-c
