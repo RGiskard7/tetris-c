@@ -20,6 +20,7 @@
 
 // Resources
 #define FONT_RSC       "resources/fonts/space_invaders.ttf"
+#define SND_MUSIC      "resources/sounds/sound.mp3"
 
 // Board geometry (10 cols x 22 rows: 20 visible + 2 hidden at the top)
 #define BOARD_COLS      10

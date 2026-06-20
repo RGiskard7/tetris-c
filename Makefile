@@ -10,7 +10,7 @@ LIB_ALLEGRO=\lib
 INCLUDE_ALLEGRO=\include
 
 FLAGS=-I include -I $(PATH_ALLEGRO)$(INCLUDE_ALLEGRO) $(CFLAGS)
-LIBS=-L $(PATH_ALLEGRO)$(LIB_ALLEGRO) -lallegro_monolith -lallegro_main -lallegro_primitives -lallegro_font -lallegro_ttf -lallegro_image
+LIBS=-L $(PATH_ALLEGRO)$(LIB_ALLEGRO) -lallegro_monolith -lallegro_main -lallegro_primitives -lallegro_font -lallegro_ttf -lallegro_image -lallegro_audio -lallegro_acodec
 
 OBJS=src/main.o src/game.o src/board.o src/piece.o
 TARGET=tetris.exe

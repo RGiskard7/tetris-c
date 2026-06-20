@@ -19,6 +19,8 @@
 #include <allegro5/allegro_primitives.h>
 #include <allegro5/allegro_font.h>
 #include <allegro5/allegro_ttf.h>
+#include <allegro5/allegro_audio.h>
+#include <allegro5/allegro_acodec.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -28,6 +30,9 @@ struct _game {
     ALLEGRO_EVENT_QUEUE *event_queue;   ///< Event queue
     ALLEGRO_EVENT events;               ///< Last event polled
     ALLEGRO_FONT *font;                 ///< TTF font for HUD and overlays
+    ALLEGRO_SAMPLE *music;              ///< Background music sample
+    ALLEGRO_SAMPLE_ID music_id;         ///< ID of the playing music instance
+    bool music_playing;                 ///< True while music is active
 
     BOARD *board;                       ///< Locked-cell grid
     PIECE *piece;                       ///< Active falling tetromino
@@ -102,6 +107,8 @@ GAME *game_create(void) {
     new_game->timer = NULL;
     new_game->event_queue = NULL;
     new_game->font = NULL;
+    new_game->music = NULL;
+    new_game->music_playing = false;
     new_game->board = NULL;
     new_game->piece = NULL;
 
@@ -148,6 +155,11 @@ void game_destroy(GAME *game) {
     if (game->board) {
         board_destroy(game->board);
         game->board = NULL;
+    }
+    if (game->music) {
+        al_stop_sample(&game->music_id);
+        al_destroy_sample(game->music);
+        game->music = NULL;
     }
     if (game->font) {
         al_destroy_font(game->font);
@@ -207,8 +219,9 @@ STATUS game_init(GAME *game) {
     al_register_event_source(game->event_queue,
         al_get_keyboard_event_source());
 
-    // la fuente es opcional: si falta, el juego sigue
+    // la fuente y la musica son opcionales: si faltan, el juego sigue
     game->font = al_load_ttf_font(FONT_RSC, 18, 0);
+    game->music = al_load_sample(SND_MUSIC);
 
     game->board = board_create();
     if (!game->board) {
@@ -373,6 +386,10 @@ static STATUS game_spawn_piece(GAME *game) {
 
     if (board_check_collision(game->board, blocks)) {
         game->state = STATE_OVER;
+        if (game->music_playing) {
+            al_stop_sample(&game->music_id);
+            game->music_playing = false;
+        }
 
         return ERROR;
     }
@@ -478,6 +495,11 @@ STATUS game_update(GAME *game, ALLEGRO_KEYBOARD_STATE *key) {
             if (enter_now && !game->enter_was_down) {
                 if (game_new_game(game) == OK) {
                     game->state = STATE_PLAY;
+                    if (game->music && !game->music_playing) {
+                        al_play_sample(game->music, 0.4f, 0, 1.0f,
+                            ALLEGRO_PLAYMODE_LOOP, &game->music_id);
+                        game->music_playing = true;
+                    }
                 }
             }
             game->enter_was_down = enter_now;
@@ -491,6 +513,11 @@ STATUS game_update(GAME *game, ALLEGRO_KEYBOARD_STATE *key) {
             bool p_now = al_key_down(key, ALLEGRO_KEY_P);
             if (p_now && !game->pause_was_down) {
                 game->state = STATE_PLAY;
+                if (game->music && !game->music_playing) {
+                    al_play_sample(game->music, 0.4f, 0, 1.0f,
+                        ALLEGRO_PLAYMODE_LOOP, &game->music_id);
+                    game->music_playing = true;
+                }
             }
             game->pause_was_down = p_now;
             break;
@@ -539,6 +566,10 @@ static STATUS game_update_play(GAME *game, ALLEGRO_KEYBOARD_STATE *key) {
     if (p_now && !game->pause_was_down) {
         game->state = STATE_PAUSE;
         game->pause_was_down = p_now;
+        if (game->music_playing) {
+            al_stop_sample(&game->music_id);
+            game->music_playing = false;
+        }
         return OK;
     }
     game->pause_was_down = p_now;
@@ -546,6 +577,10 @@ static STATUS game_update_play(GAME *game, ALLEGRO_KEYBOARD_STATE *key) {
     // ESC tambien pausa durante la partida
     if (al_key_down(key, ALLEGRO_KEY_ESCAPE)) {
         game->state = STATE_PAUSE;
+        if (game->music_playing) {
+            al_stop_sample(&game->music_id);
+            game->music_playing = false;
+        }
         return OK;
     }
 
@@ -635,6 +670,10 @@ static STATUS game_update_play(GAME *game, ALLEGRO_KEYBOARD_STATE *key) {
         }
         if (board_is_game_over(game->board)) {
             game->state = STATE_OVER;
+            if (game->music_playing) {
+                al_stop_sample(&game->music_id);
+                game->music_playing = false;
+            }
         } else {
             game_spawn_piece(game);
         }
@@ -684,6 +723,10 @@ static STATUS game_update_play(GAME *game, ALLEGRO_KEYBOARD_STATE *key) {
             }
             if (board_is_game_over(game->board)) {
                 game->state = STATE_OVER;
+                if (game->music_playing) {
+                    al_stop_sample(&game->music_id);
+                    game->music_playing = false;
+                }
             } else {
                 game_spawn_piece(game);
             }

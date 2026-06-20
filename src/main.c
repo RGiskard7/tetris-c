@@ -14,6 +14,8 @@
 #include <allegro5/allegro_font.h>
 #include <allegro5/allegro_ttf.h>
 #include <allegro5/allegro_image.h>
+#include <allegro5/allegro_audio.h>
+#include <allegro5/allegro_acodec.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
@@ -32,6 +34,7 @@ typedef struct {
   bool is_keyboard_initialized;
   bool is_font_initialized;
   bool is_ttf_initialized;
+  bool is_audio_initialized;
 } Flags;
 
 void clean_up(Flags *flags, GAME *game);
@@ -48,7 +51,7 @@ void window_configuration(GAME *game);
  */
 int main(void) {
   GAME *game = NULL;
-  Flags flags = {false, false, false, false};
+  Flags flags = {false, false, false, false, false};
   ALLEGRO_KEYBOARD_STATE key;
 
   srand((unsigned)time(NULL));
@@ -141,6 +144,22 @@ bool init_allegro(Flags *flags) {
   }
   flags->is_ttf_initialized = true;
 
+  if (!al_install_audio()) {
+    fprintf(stderr, "Error installing Allegro Audio.\n");
+    return false;
+  }
+
+  if (!al_init_acodec_addon()) {
+    fprintf(stderr, "Error initializing Allegro Acodec Addon.\n");
+    return false;
+  }
+
+  if (!al_reserve_samples(2)) {
+    fprintf(stderr, "Error reserving samples.\n");
+    return false;
+  }
+  flags->is_audio_initialized = true;
+
   return true;
 }
 
@@ -179,6 +198,10 @@ void window_configuration(GAME *game) {
 void clean_up(Flags *flags, GAME *game) {
   if (game) {
     game_destroy(game);
+  }
+
+  if (flags->is_audio_initialized) {
+    al_uninstall_audio();
   }
 
   if (flags->is_ttf_initialized) {
