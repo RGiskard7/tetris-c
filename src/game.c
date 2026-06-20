@@ -71,6 +71,7 @@ static const int _line_scores[4] = {
 
 static STATUS game_new_game(GAME *game);
 static STATUS game_spawn_piece(GAME *game);
+static int    game_random_piece(GAME *game, int last_type);
 static int    game_get_gravity(GAME *game);
 static void   game_add_score(GAME *game, int lines_cleared);
 static void   game_move_ghost(GAME *game, PIECE *ghost);
@@ -324,9 +325,30 @@ static STATUS game_new_game(GAME *game) {
     board_clear(game->board);
 
     piece_reset(game->piece);
-    game->next_type = rand() % PIECE_TYPES;
+    game->next_type = game_random_piece(game, piece_get_type(game->piece));
 
     return game_spawn_piece(game);
+}
+
+/**
+ * @brief NES-style randomiser: rolls a piece. If it matches the last one,
+ *        rolls again once. Reduces long streaks of the same piece.
+ *
+ * @param game Pointer to the game (unused, kept for API consistency).
+ * @param last_type Previous piece type to avoid repeating.
+ * @return A piece type (0-6).
+ */
+static int game_random_piece(GAME *game, int last_type) {
+    int type = 0;
+
+    (void) game;
+
+    type = rand() % PIECE_TYPES;
+    if (type == last_type) {
+        type = rand() % PIECE_TYPES; // reroll once
+    }
+
+    return type;
 }
 
 /**
@@ -355,7 +377,7 @@ static STATUS game_spawn_piece(GAME *game) {
         return ERROR;
     }
 
-    game->next_type = rand() % PIECE_TYPES;
+    game->next_type = game_random_piece(game, piece_get_type(game->piece));
     game->gravity_timer = 0;
     game->lock_timer = 0;
     game->piece_on_ground = false;
@@ -574,32 +596,19 @@ static STATUS game_update_play(GAME *game, ALLEGRO_KEYBOARD_STATE *key) {
     }
 
     // rotacion con deteccion de flanco (una pulsacion = un giro)
+    // NES original: sin wall kicks, la rotacion falla si hay colision
     if (up && !game->up_was_down) {
         int orig_rot = piece_get_rotation(game->piece);
 
         piece_rotate_cw(game->piece);
         piece_get_blocks(game->piece, blocks);
 
-        // wall kick basico: probar desplazamientos si hay colision
         if (board_check_collision(game->board, blocks)) {
-            // probar mover derecha
-            piece_move(game->piece, 1, 0);
-            piece_get_blocks(game->piece, blocks);
-            if (board_check_collision(game->board, blocks)) {
-                // probar mover izquierda (desde +1, -2 = -1 total)
-                piece_move(game->piece, -2, 0);
-                piece_get_blocks(game->piece, blocks);
-                if (board_check_collision(game->board, blocks)) {
-                    // probar mover arriba (desde -1, +1,-1 = 0,-1 total)
-                    piece_move(game->piece, 1, -1);
-                    piece_get_blocks(game->piece, blocks);
-                    if (board_check_collision(game->board, blocks)) {
-                        // fallo: deshacer y restaurar rotacion
-                        piece_move(game->piece, 0, 1);
-                        piece_set_rotation(game->piece, orig_rot);
-                    }
-                }
-            }
+            // rotacion falla, restaurar
+            piece_set_rotation(game->piece, orig_rot);
+        } else {
+            // rotacion exitosa: reiniciar lock delay (NES behaviour)
+            game->lock_timer = 0;
         }
     }
     game->up_was_down = up;

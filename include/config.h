@@ -54,24 +54,25 @@
 #define SPAWN_X          (BOARD_COLS / 2 - 2)
 #define SPAWN_Y          0
 
-// Scoring (classic NES-style, multiplied by current level + 1)
-#define PTS_SINGLE      100
-#define PTS_DOUBLE      300
-#define PTS_TRIPLE      500
-#define PTS_TETRIS      800
+// Scoring (NES original, multiplied by current level + 1)
+// Single = 40, Double = 100, Triple = 300, Tetris = 1200
+#define PTS_SINGLE       40
+#define PTS_DOUBLE      100
+#define PTS_TRIPLE      300
+#define PTS_TETRIS     1200
 #define PTS_SOFT_DROP     1
 #define PTS_HARD_DROP     2
 
-// Level progression
+// Level progression (10 lines per level, 30 levels 0-29)
 #define LINES_PER_LEVEL  10
-#define MAX_LEVEL        15
+#define MAX_LEVEL        29
 
 // DAS (Delayed Auto Shift) in frames
 #define DAS_DELAY        16
 #define DAS_REPEAT        6
 
-// Lock delay in frames
-#define LOCK_DELAY       30
+// Lock delay in frames (brief, as in NES)
+#define LOCK_DELAY       15
 
 // Colours
 #define COLOR_BG        al_map_rgb(0, 0, 0)
@@ -90,7 +91,10 @@
 #define COLOR_L         al_map_rgb(240, 160, 0)
 
 // Level speed table (frames per grid-cell drop @ 60 FPS)
+// NES original: 30 levels (0-29), level 29 is the "kill screen"
 #define SPEED_TABLE                                   \
-    48, 43, 38, 33, 28, 23, 18, 13, 8, 6, 5, 5, 5, 4, 4, 3
+    48, 43, 38, 33, 28, 23, 18, 13, 8, 6,            \
+     5,  5,  5,  4,  4,  4,  3,  3, 3, 2,            \
+     2,  2,  2,  2,  2,  2,  2,  2, 2, 1
 
 #endif /* CONFIG_H */
