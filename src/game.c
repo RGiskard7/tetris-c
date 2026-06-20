@@ -23,6 +23,7 @@
 #include <allegro5/allegro_acodec.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 struct _game {
     ALLEGRO_DISPLAY *display;           ///< Game window
@@ -58,6 +59,14 @@ struct _game {
     bool pause_was_down;                ///< Edge detection for P
     bool up_was_down;                   ///< Edge detection for rotate
     bool space_was_down;                ///< Edge detection for hard drop
+
+    TOP_ENTRY top_scores[MAX_TOP_SCORES + 1]; ///< Top 5 high scores (+1 for insert)
+    bool hs_entry_active;               ///< True when entering initials
+    int hs_entry_pos;                   ///< Current letter position (0-2)
+    int hs_entry_cursor_timer;          ///< Timer for blinking cursor
+    char hs_letters[3];                 ///< Letters being entered
+    int hs_entry_delay;                 ///< Input delay frames
+    bool hs_enter_needs_release;        ///< Require Enter release
 };
 
 /**
@@ -74,6 +83,10 @@ static const int _line_scores[4] = {
 
 // Private function declarations
 
+static STATUS game_load_top_scores(GAME *game);
+static STATUS game_save_top_scores(GAME *game);
+static void   game_insert_top_score(GAME *game, int score);
+static int    game_highscore_verify(GAME *game, int score);
 static STATUS game_new_game(GAME *game);
 static STATUS game_spawn_piece(GAME *game);
 static int    game_random_piece(GAME *game, int last_type);
@@ -82,9 +95,118 @@ static void   game_add_score(GAME *game, int lines_cleared);
 static void   game_move_ghost(GAME *game, PIECE *ghost);
 static STATUS game_update_play(GAME *game, ALLEGRO_KEYBOARD_STATE *key);
 
+static STATUS game_update_highscore(GAME *game, ALLEGRO_KEYBOARD_STATE *key);
+
 static STATUS game_print_hud(GAME *game);
 static STATUS game_print_preview(GAME *game);
 static STATUS game_print_overlay(GAME *game);
+
+/**
+ * @brief Loads top scores from the persistence file.
+ *
+ * @param game Pointer to the game.
+ * @return OK on success, ERROR if game is NULL.
+ */
+static STATUS game_load_top_scores(GAME *game) {
+    int i = 0;
+
+    if (!game) {
+        return ERROR;
+    }
+
+    FILE *f = fopen(TOP_SCORES_FILE, "r");
+    if (!f) {
+        return OK;
+    }
+
+    for (i = 0; i <= MAX_TOP_SCORES; i++) {
+        if (fscanf(f, "%3s %d", game->top_scores[i].name,
+            &game->top_scores[i].score) != 2) {
+            break;
+        }
+    }
+
+    fclose(f);
+
+    return OK;
+}
+
+/**
+ * @brief Saves top scores to the persistence file.
+ *
+ * @param game Pointer to the game.
+ * @return OK on success, ERROR if game is NULL.
+ */
+static STATUS game_save_top_scores(GAME *game) {
+    int i = 0;
+
+    if (!game) {
+        return ERROR;
+    }
+
+    FILE *f = fopen(TOP_SCORES_FILE, "w");
+    if (!f) {
+        return ERROR;
+    }
+
+    for (i = 0; i <= MAX_TOP_SCORES; i++) {
+        fprintf(f, "%s %d\n", game->top_scores[i].name,
+            game->top_scores[i].score);
+    }
+
+    fclose(f);
+
+    return OK;
+}
+
+/**
+ * @brief Inserts a score into the sorted top scores list.
+ *
+ * @param game Pointer to the game.
+ * @param score Score to insert.
+ */
+static void game_insert_top_score(GAME *game, int score) {
+    int i = 0;
+    int j = 0;
+
+    if (!game || score <= 0) {
+        return;
+    }
+
+    for (i = 0; i <= MAX_TOP_SCORES; i++) {
+        if (score > game->top_scores[i].score) {
+            for (j = MAX_TOP_SCORES; j > i; j--) {
+                game->top_scores[j] = game->top_scores[j - 1];
+            }
+            strcpy(game->top_scores[i].name, "---");
+            game->top_scores[i].score = score;
+            break;
+        }
+    }
+}
+
+/**
+ * @brief Checks if the given score qualifies for the top scores list.
+ *
+ * @param game Pointer to the game.
+ * @param score Score to check.
+ * @return 1 if it qualifies, 0 otherwise.
+ */
+static int game_highscore_verify(GAME *game, int score) {
+    int i = 0;
+
+    if (!game || score <= 0) {
+        return 0;
+    }
+
+    for (i = 0; i <= MAX_TOP_SCORES; i++) {
+        if (score > game->top_scores[i].score) {
+            return 1;
+        }
+    }
+
+    return 0;
+}
 
 // =========================================================================
 // Functions: Game Creation and Destruction
@@ -134,6 +256,12 @@ GAME *game_create(void) {
     new_game->pause_was_down = true;
     new_game->up_was_down = true;
     new_game->space_was_down = true;
+
+    for (int i = 0; i <= MAX_TOP_SCORES; i++) {
+        strcpy(new_game->top_scores[i].name, "---");
+        new_game->top_scores[i].score = 0;
+    }
+    new_game->hs_entry_active = false;
 
     return new_game;
 }
@@ -232,6 +360,8 @@ STATUS game_init(GAME *game) {
     if (!game->piece) {
         return ERROR;
     }
+
+    game_load_top_scores(game);
 
     return OK;
 }
@@ -526,9 +656,24 @@ STATUS game_update(GAME *game, ALLEGRO_KEYBOARD_STATE *key) {
         case STATE_OVER:
             enter_now = al_key_down(key, ALLEGRO_KEY_ENTER);
             if (enter_now && !game->enter_was_down) {
-                game->state = STATE_TITLE;
+                if (game_highscore_verify(game, game->score)) {
+                    game->hs_entry_active = true;
+                    game->hs_entry_pos = 0;
+                    memset(game->hs_letters, 'A', 3);
+                    game->hs_entry_cursor_timer = 0;
+                    game->hs_entry_delay = 45;
+                    game->hs_enter_needs_release = true;
+                    game_insert_top_score(game, game->score);
+                    game->state = STATE_HIGHSCORE;
+                } else {
+                    game->state = STATE_TITLE;
+                }
             }
             game->enter_was_down = enter_now;
+            break;
+
+        case STATE_HIGHSCORE:
+            game_update_highscore(game, key);
             break;
 
         default:
@@ -738,6 +883,123 @@ static STATUS game_update_play(GAME *game, ALLEGRO_KEYBOARD_STATE *key) {
     return OK;
 }
 
+/**
+ * @brief Handles input for the high score initials entry.
+ *
+ * UP/DOWN cycle letters, LEFT/RIGHT move cursor, ENTER saves, ESC skips.
+ *
+ * @param game Pointer to the game.
+ * @param key Current keyboard state.
+ * @return STATUS code (OK on success, ERROR on bad arguments).
+ */
+static STATUS game_update_highscore(GAME *game, ALLEGRO_KEYBOARD_STATE *key) {
+    static bool up_held = false;
+    static bool down_held = false;
+    static bool right_held = false;
+    static bool left_held = false;
+    static bool enter_held = false;
+
+    if (!game || !key) {
+        return ERROR;
+    }
+
+    // input delay prevents Enter bleed from GAME_OVER screen
+    if (game->hs_entry_delay > 0) {
+        game->hs_entry_delay--;
+        if (game->hs_entry_delay == 0) {
+            up_held = down_held = right_held = left_held = true;
+        }
+        return OK;
+    }
+
+    game->hs_entry_cursor_timer++;
+    if (game->hs_entry_cursor_timer >= 8) {
+        game->hs_entry_cursor_timer = 0;
+    }
+
+    // UP: cycle letter forward
+    if (al_key_down(key, ALLEGRO_KEY_UP)) {
+        if (!up_held) {
+            game->hs_letters[game->hs_entry_pos]++;
+            if (game->hs_letters[game->hs_entry_pos] > 'Z') {
+                game->hs_letters[game->hs_entry_pos] = '0';
+            }
+            up_held = true;
+        }
+    } else {
+        up_held = false;
+    }
+
+    // DOWN: cycle letter backward
+    if (al_key_down(key, ALLEGRO_KEY_DOWN)) {
+        if (!down_held) {
+            game->hs_letters[game->hs_entry_pos]--;
+            if (game->hs_letters[game->hs_entry_pos] < '0') {
+                game->hs_letters[game->hs_entry_pos] = 'Z';
+            }
+            down_held = true;
+        }
+    } else {
+        down_held = false;
+    }
+
+    // RIGHT: next position
+    if (al_key_down(key, ALLEGRO_KEY_RIGHT)) {
+        if (!right_held) {
+            game->hs_entry_pos++;
+            if (game->hs_entry_pos > 2) {
+                game->hs_entry_pos = 2;
+            }
+            right_held = true;
+        }
+    } else {
+        right_held = false;
+    }
+
+    // LEFT: previous position
+    if (al_key_down(key, ALLEGRO_KEY_LEFT)) {
+        if (!left_held) {
+            game->hs_entry_pos--;
+            if (game->hs_entry_pos < 0) {
+                game->hs_entry_pos = 0;
+            }
+            left_held = true;
+        }
+    } else {
+        left_held = false;
+    }
+
+    // ENTER: save
+    if (game->hs_enter_needs_release) {
+        if (!al_key_down(key, ALLEGRO_KEY_ENTER)) {
+            game->hs_enter_needs_release = false;
+            enter_held = false;
+        }
+    } else if (al_key_down(key, ALLEGRO_KEY_ENTER)) {
+        if (!enter_held) {
+            game->top_scores[0].name[0] = game->hs_letters[0];
+            game->top_scores[0].name[1] = game->hs_letters[1];
+            game->top_scores[0].name[2] = game->hs_letters[2];
+            game->top_scores[0].name[3] = '\0';
+            game_save_top_scores(game);
+            game->hs_entry_active = false;
+            game->state = STATE_TITLE;
+            game->enter_was_down = true;
+        }
+    } else {
+        enter_held = false;
+    }
+
+    // ESC: skip
+    if (al_key_down(key, ALLEGRO_KEY_ESCAPE)) {
+        game->hs_entry_active = false;
+        game->state = STATE_TITLE;
+        game->enter_was_down = true;
+    }
+
+    return OK;
+}
+
 // =========================================================================
 // Functions: Rendering
 // =========================================================================
@@ -883,6 +1145,8 @@ static STATUS game_print_hud(GAME *game) {
  */
 static STATUS game_print_overlay(GAME *game) {
     char buf[32];
+    int phase = 0;
+    int i = 0;
 
     if (!game) {
         return ERROR;
@@ -894,21 +1158,45 @@ static STATUS game_print_overlay(GAME *game) {
 
     switch (game->state) {
         case STATE_TITLE:
-            al_draw_text(game->font, al_map_rgb(255, 255, 255),
-                (float) DISPLAY_WIDTH / 2.0f, 300.0f,
-                ALLEGRO_ALIGN_CENTER, "TETRIS");
-            al_draw_text(game->font, al_map_rgb(200, 200, 200),
-                (float) DISPLAY_WIDTH / 2.0f, 340.0f,
-                ALLEGRO_ALIGN_CENTER,
-                "LEFT / RIGHT: move   DOWN: soft drop");
-            al_draw_text(game->font, al_map_rgb(200, 200, 200),
-                (float) DISPLAY_WIDTH / 2.0f, 365.0f,
-                ALLEGRO_ALIGN_CENTER,
-                "UP: rotate   SPACE: hard drop   P: pause");
-            if ((game->title_timer / 30) % 2) {
+            phase = (game->title_timer / 90) % 2;
+
+            if (phase == 0) {
+                al_draw_text(game->font, al_map_rgb(255, 255, 255),
+                    (float) DISPLAY_WIDTH / 2.0f, 240.0f,
+                    ALLEGRO_ALIGN_CENTER, "TETRIS");
+                al_draw_text(game->font, al_map_rgb(200, 200, 200),
+                    (float) DISPLAY_WIDTH / 2.0f, 290.0f,
+                    ALLEGRO_ALIGN_CENTER,
+                    "LEFT / RIGHT: move   DOWN: soft drop");
+                al_draw_text(game->font, al_map_rgb(200, 200, 200),
+                    (float) DISPLAY_WIDTH / 2.0f, 315.0f,
+                    ALLEGRO_ALIGN_CENTER,
+                    "UP: rotate   SPACE: hard drop   P: pause");
+                if ((game->title_timer / 30) % 2) {
+                    al_draw_text(game->font, al_map_rgb(255, 255, 0),
+                        (float) DISPLAY_WIDTH / 2.0f, 370.0f,
+                        ALLEGRO_ALIGN_CENTER, "PRESS ENTER");
+                }
+            } else {
                 al_draw_text(game->font, al_map_rgb(255, 255, 0),
-                    (float) DISPLAY_WIDTH / 2.0f, 410.0f,
-                    ALLEGRO_ALIGN_CENTER, "PRESS ENTER");
+                    (float) DISPLAY_WIDTH / 2.0f, 140.0f,
+                    ALLEGRO_ALIGN_CENTER, "TOP SCORES");
+                for (i = 0; i < MAX_TOP_SCORES; i++) {
+                    if (game->top_scores[i].score > 0) {
+                        sprintf(buf, "%d.  %-3s  %d", i + 1,
+                            game->top_scores[i].name,
+                            game->top_scores[i].score);
+                        al_draw_text(game->font, al_map_rgb(255, 255, 255),
+                            (float) DISPLAY_WIDTH / 2.0f,
+                            190.0f + i * 32.0f,
+                            ALLEGRO_ALIGN_CENTER, buf);
+                    }
+                }
+                if ((game->title_timer / 30) % 2) {
+                    al_draw_text(game->font, al_map_rgb(255, 255, 0),
+                        (float) DISPLAY_WIDTH / 2.0f, 380.0f,
+                        ALLEGRO_ALIGN_CENTER, "PRESS ENTER");
+                }
             }
             break;
 
@@ -933,6 +1221,48 @@ static STATUS game_print_overlay(GAME *game) {
                 (float) DISPLAY_WIDTH / 2.0f, 370.0f,
                 ALLEGRO_ALIGN_CENTER, "ENTER to continue");
             break;
+
+        case STATE_HIGHSCORE: {
+            char letters[8];
+
+            sprintf(buf, "SCORE: %d", game->score);
+            sprintf(letters, "%c %c %c",
+                game->hs_letters[0],
+                game->hs_letters[1],
+                game->hs_letters[2]);
+
+            al_draw_text(game->font, al_map_rgb(0, 255, 0),
+                (float) DISPLAY_WIDTH / 2.0f, 240.0f,
+                ALLEGRO_ALIGN_CENTER, "NEW HIGH SCORE!");
+            al_draw_text(game->font, al_map_rgb(255, 255, 255),
+                (float) DISPLAY_WIDTH / 2.0f, 275.0f,
+                ALLEGRO_ALIGN_CENTER, buf);
+            al_draw_text(game->font, al_map_rgb(255, 255, 0),
+                (float) DISPLAY_WIDTH / 2.0f, 310.0f,
+                ALLEGRO_ALIGN_CENTER, "ENTER YOUR INITIALS:");
+            al_draw_text(game->font, al_map_rgb(255, 255, 255),
+                (float) DISPLAY_WIDTH / 2.0f, 345.0f,
+                ALLEGRO_ALIGN_CENTER, letters);
+
+            // blinking cursor
+            if ((game->hs_entry_cursor_timer / 4) % 2 == 0) {
+                int cx = DISPLAY_WIDTH / 2 - 20
+                    + game->hs_entry_pos * 20;
+                al_draw_text(game->font, al_map_rgb(255, 255, 255),
+                    (float) cx, 362.0f,
+                    ALLEGRO_ALIGN_CENTER, "_");
+            }
+
+            al_draw_text(game->font, al_map_rgb(180, 180, 180),
+                (float) DISPLAY_WIDTH / 2.0f, 395.0f,
+                ALLEGRO_ALIGN_CENTER,
+                "UP / DOWN: change letter");
+            al_draw_text(game->font, al_map_rgb(180, 180, 180),
+                (float) DISPLAY_WIDTH / 2.0f, 420.0f,
+                ALLEGRO_ALIGN_CENTER,
+                "ENTER: save   ESC: skip");
+            break;
+        }
 
         default:
             break;

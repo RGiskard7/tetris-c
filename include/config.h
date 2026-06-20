@@ -98,4 +98,13 @@
      5,  5,  5,  4,  4,  4,  3,  3, 3, 2,            \
      2,  2,  2,  2,  2,  2,  2,  2, 2, 1
 
+// High scores
+#define TOP_SCORES_FILE "highscores.dat"
+#define MAX_TOP_SCORES  5
+
+typedef struct {
+    char name[4];
+    int score;
+} TOP_ENTRY;
+
 #endif /* CONFIG_H */

@@ -10,7 +10,8 @@ typedef enum {
     STATE_TITLE,
     STATE_PLAY,
     STATE_PAUSE,
-    STATE_OVER
+    STATE_OVER,
+    STATE_HIGHSCORE
 } GAME_STATE;
 
 GAME *game_create(void);
