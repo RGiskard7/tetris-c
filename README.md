@@ -1,7 +1,7 @@
 # Tetris
 
 <p align="center">
-  <img src="resources/tetris.png" alt="Tetris" width="500"/>
+  <img src="resources/tetris-game-boy.png" alt="Tetris" width="500"/>
 </p>
 
 <p align="center"><em>El Tetris original de NES, rehecho en C al milimetro.</em></p>
