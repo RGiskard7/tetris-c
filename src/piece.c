@@ -394,13 +394,60 @@ STATUS piece_rotate_cw(PIECE *piece) {
 // =========================================================================
 
 /**
- * @brief Renders the piece on the board.
+ * @brief Draws a single block tile scaled from the Game Boy sheet.
+ *
+ * Source tile coordinates on the "Tetriminos & Block Tiles" sheet: the six
+ * framed tiles on the top row (y=100) plus the beveled garbage block at
+ * x=104, each 8x8 px. A distinct solid tile is mapped to every piece type
+ * so the monochrome pieces stay distinguishable, like on the Game Boy. The
+ * dotted fill tile is intentionally avoided: scaled up it reads as loose
+ * noise rather than a solid block.
+ *
+ * @param tiles Tiles sprite sheet, or NULL for the colour fallback.
+ * @param type Piece type (0-6).
+ * @param x Destination top-left x.
+ * @param y Destination top-left y.
+ * @param size Destination square side.
+ * @param alpha Opacity in [0, 1].
+ */
+void piece_draw_tile(ALLEGRO_BITMAP *tiles, int type, float x, float y,
+    float size, float alpha) {
+    static const int tile_x[PIECE_TYPES] = { 2, 10, 18, 26, 34, 42, 104 };
+    static const int tile_y[PIECE_TYPES] = { 100, 100, 100, 100, 100, 100, 100 };
+
+    if (type < 0 || type >= PIECE_TYPES) {
+        return;
+    }
+
+    if (!tiles) {
+        // fallback: solid colour block so the game runs without the sheet
+        ALLEGRO_COLOR color = piece_get_color(type);
+        al_draw_filled_rectangle(x, y, x + size, y + size, color);
+        al_draw_filled_rectangle(x + 1.0f, y + 1.0f,
+            x + size - 2.0f, y + size - 2.0f, color);
+        return;
+    }
+
+    if (alpha >= 1.0f) {
+        al_draw_scaled_bitmap(tiles, tile_x[type], tile_y[type],
+            TILE_SRC, TILE_SRC, x, y, size, size, 0);
+    } else {
+        al_draw_tinted_scaled_bitmap(tiles,
+            al_map_rgba_f(alpha, alpha, alpha, alpha),
+            tile_x[type], tile_y[type], TILE_SRC, TILE_SRC,
+            x, y, size, size, 0);
+    }
+}
+
+/**
+ * @brief Renders the piece on the board using the Game Boy block tiles.
  *
  * @param piece Pointer to the piece.
- * @param ghost If true renders with translucent ghost colour.
+ * @param tiles Tiles sprite sheet, or NULL for the colour fallback.
+ * @param ghost If true renders translucent (ghost piece).
  * @return OK on success, ERROR if piece is NULL.
  */
-STATUS piece_print(PIECE *piece, bool ghost) {
+STATUS piece_print(PIECE *piece, ALLEGRO_BITMAP *tiles, bool ghost) {
     int blocks[4][2];
     int i = 0;
     float bx = 0.0f;
@@ -408,19 +455,13 @@ STATUS piece_print(PIECE *piece, bool ghost) {
     float cs = (float) CELL_SIZE;
     float x0 = (float) BOARD_X0;
     float y0 = (float) BOARD_Y0;
-    ALLEGRO_COLOR color;
+    float alpha = ghost ? 0.35f : 1.0f;
 
     if (!piece) {
         return ERROR;
     }
 
     piece_get_blocks(piece, blocks);
-
-    if (ghost) {
-        color = COLOR_GHOST;
-    } else {
-        color = piece_get_color(piece->type);
-    }
 
     for (i = 0; i < 4; i++) {
         if (blocks[i][1] < BOARD_HIDDEN) {
@@ -430,11 +471,7 @@ STATUS piece_print(PIECE *piece, bool ghost) {
         bx = x0 + blocks[i][0] * cs;
         by = y0 + (blocks[i][1] - BOARD_HIDDEN) * cs;
 
-        al_draw_filled_rectangle(bx, by, bx + cs, by + cs, color);
-        if (!ghost) {
-            al_draw_filled_rectangle(bx + 1.0f, by + 1.0f,
-                bx + cs - 2.0f, by + cs - 2.0f, color);
-        }
+        piece_draw_tile(tiles, piece->type, bx, by, cs, alpha);
     }
 
     return OK;

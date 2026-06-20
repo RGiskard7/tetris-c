@@ -12,13 +12,14 @@
 
 #include "board.h"
 #include "config.h"
+#include "piece.h"
 
 #include <allegro5/allegro_primitives.h>
 #include <stdlib.h>
 #include <string.h>
 
 struct _board {
-    ALLEGRO_COLOR cells[BOARD_ROWS][BOARD_COLS];
+    int type[BOARD_ROWS][BOARD_COLS];   ///< Piece type per cell (tile select)
     bool filled[BOARD_ROWS][BOARD_COLS];
 };
 
@@ -71,7 +72,7 @@ STATUS board_clear(BOARD *board) {
 
     for (r = 0; r < BOARD_ROWS; r++) {
         for (c = 0; c < BOARD_COLS; c++) {
-            board->cells[r][c] = al_map_rgba(0, 0, 0, 0);
+            board->type[r][c] = -1;
             board->filled[r][c] = false;
         }
     }
@@ -128,10 +129,10 @@ bool board_check_collision(BOARD *board, int blocks[4][2]) {
  *
  * @param board Pointer to the board.
  * @param blocks Array of 4 (x, y) pairs in board coordinates.
- * @param color Colour to store.
+ * @param type Piece type (0-6) to store with each cell.
  * @return OK on success, ERROR if board is NULL.
  */
-STATUS board_lock_piece(BOARD *board, int blocks[4][2], ALLEGRO_COLOR color) {
+STATUS board_lock_piece(BOARD *board, int blocks[4][2], int type) {
     int i = 0;
 
     if (!board) {
@@ -143,7 +144,7 @@ STATUS board_lock_piece(BOARD *board, int blocks[4][2], ALLEGRO_COLOR color) {
         int y = blocks[i][1];
 
         if (x >= 0 && x < BOARD_COLS && y >= 0 && y < BOARD_ROWS) {
-            board->cells[y][x] = color;
+            board->type[y][x] = type;
             board->filled[y][x] = true;
         }
     }
@@ -182,13 +183,13 @@ static void board_collapse_rows(BOARD *board, int from_row) {
 
     for (r = from_row; r > 0; r--) {
         for (c = 0; c < BOARD_COLS; c++) {
-            board->cells[r][c] = board->cells[r - 1][c];
+            board->type[r][c] = board->type[r - 1][c];
             board->filled[r][c] = board->filled[r - 1][c];
         }
     }
 
     for (c = 0; c < BOARD_COLS; c++) {
-        board->cells[0][c] = al_map_rgba(0, 0, 0, 0);
+        board->type[0][c] = -1;
         board->filled[0][c] = false;
     }
 }
@@ -245,39 +246,32 @@ bool board_is_game_over(BOARD *board) {
     return false;
 }
 
-/**
- * @brief Retrieves the colour stored in a given cell.
- *
- * @param board Pointer to the board.
- * @param row Row index.
- * @param col Column index.
- * @return Colour of the cell, or black if empty or out of bounds.
- */
-ALLEGRO_COLOR board_get_cell_color(BOARD *board, int row, int col) {
-    if (!board || col < 0 || col >= BOARD_COLS
-        || row < 0 || row >= BOARD_ROWS) {
-        return al_map_rgba(0, 0, 0, 0);
-    }
-
-    return board->cells[row][col];
-}
-
 // =========================================================================
 // Functions: Rendering
 // =========================================================================
 
 /**
- * @brief Renders the board: background, grid lines, border, and locked cells.
+ * @brief Renders the board: Game Boy well background and locked tiles.
+ *
+ * The empty-well region of the playfields sheet is scaled to fill the
+ * play area, and each locked cell is drawn with its Game Boy block tile.
+ * If a sheet is missing the function falls back to flat colours so the
+ * game still runs.
  *
  * @param board Pointer to the board.
+ * @param playfield Playfields sheet for the well background, or NULL.
+ * @param tiles Tiles sheet for the locked blocks, or NULL.
  * @return OK on success, ERROR if board is NULL.
  */
-STATUS board_print(BOARD *board) {
+STATUS board_print(BOARD *board, ALLEGRO_BITMAP *playfield,
+    ALLEGRO_BITMAP *tiles) {
     int r = 0;
     int c = 0;
     float x0 = (float) BOARD_X0;
     float y0 = (float) BOARD_Y0;
     float cs = (float) CELL_SIZE;
+    float bw = BOARD_COLS * cs;
+    float bh = BOARD_VISIBLE * cs;
     float bx = 0.0f;
     float by = 0.0f;
 
@@ -285,40 +279,33 @@ STATUS board_print(BOARD *board) {
         return ERROR;
     }
 
-    // board filled background
-    al_draw_filled_rectangle(x0, y0,
-        x0 + BOARD_COLS * cs, y0 + BOARD_VISIBLE * cs, COLOR_BOARD_BG);
+    // well background: scaled light interior of the playfields sheet,
+    // framed by the Game Boy brick walls (left, and mirrored on the right)
+    if (playfield) {
+        al_draw_scaled_bitmap(playfield, WELL_SRC_X, WELL_SRC_Y,
+            WELL_SRC_W, WELL_SRC_H, x0, y0, bw, bh, 0);
+        al_draw_scaled_bitmap(playfield, WALL_SRC_X, WALL_SRC_Y,
+            WALL_SRC_W, WALL_SRC_H, x0 - WALL_DST_W, y0, WALL_DST_W, bh, 0);
+        al_draw_scaled_bitmap(playfield, WALL_SRC_X, WALL_SRC_Y,
+            WALL_SRC_W, WALL_SRC_H, x0 + bw, y0, WALL_DST_W, bh,
+            ALLEGRO_FLIP_HORIZONTAL);
+    } else {
+        al_draw_filled_rectangle(x0, y0, x0 + bw, y0 + bh, COLOR_BOARD_BG);
+    }
 
-    // locked cells (only visible rows)
+    // locked cells (only visible rows), drawn with their Game Boy tile
     for (r = BOARD_HIDDEN; r < BOARD_ROWS; r++) {
         for (c = 0; c < BOARD_COLS; c++) {
             if (board->filled[r][c]) {
                 bx = x0 + c * cs;
                 by = y0 + (r - BOARD_HIDDEN) * cs;
-
-                al_draw_filled_rectangle(bx, by, bx + cs, by + cs,
-                    board->cells[r][c]);
-                al_draw_filled_rectangle(bx + 1.0f, by + 1.0f,
-                    bx + cs - 2.0f, by + cs - 2.0f,
-                    board->cells[r][c]);
+                piece_draw_tile(tiles, board->type[r][c], bx, by, cs, 1.0f);
             }
         }
     }
 
-    // grid lines
-    for (r = 0; r <= BOARD_VISIBLE; r++) {
-        al_draw_line(x0, y0 + r * cs,
-            x0 + BOARD_COLS * cs, y0 + r * cs, COLOR_GRID, 1.0f);
-    }
-    for (c = 0; c <= BOARD_COLS; c++) {
-        al_draw_line(x0 + c * cs, y0,
-            x0 + c * cs, y0 + BOARD_VISIBLE * cs, COLOR_GRID, 1.0f);
-    }
-
-    // outer border
-    al_draw_rectangle(x0 - BORDER_W, y0 - BORDER_W,
-        x0 + BOARD_COLS * cs + BORDER_W,
-        y0 + BOARD_VISIBLE * cs + BORDER_W, COLOR_BORDER, BORDER_W);
+    // thin black frame separating the well from the walls
+    al_draw_rectangle(x0, y0, x0 + bw, y0 + bh, COLOR_BG, 2.0f);
 
     return OK;
 }

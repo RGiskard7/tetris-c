@@ -19,6 +19,7 @@
 #include <allegro5/allegro_primitives.h>
 #include <allegro5/allegro_font.h>
 #include <allegro5/allegro_ttf.h>
+#include <allegro5/allegro_image.h>
 #include <allegro5/allegro_audio.h>
 #include <allegro5/allegro_acodec.h>
 #include <stdio.h>
@@ -31,6 +32,8 @@ struct _game {
     ALLEGRO_EVENT_QUEUE *event_queue;   ///< Event queue
     ALLEGRO_EVENT events;               ///< Last event polled
     ALLEGRO_FONT *font;                 ///< TTF font for HUD and overlays
+    ALLEGRO_BITMAP *playfield;          ///< GB playfields sheet (well bg)
+    ALLEGRO_BITMAP *tiles;              ///< GB tetromino block tiles sheet
     ALLEGRO_SAMPLE *music;              ///< Background music sample
     ALLEGRO_SAMPLE_ID music_id;         ///< ID of the playing music instance
     bool music_playing;                 ///< True while music is active
@@ -229,6 +232,8 @@ GAME *game_create(void) {
     new_game->timer = NULL;
     new_game->event_queue = NULL;
     new_game->font = NULL;
+    new_game->playfield = NULL;
+    new_game->tiles = NULL;
     new_game->music = NULL;
     new_game->music_playing = false;
     new_game->board = NULL;
@@ -293,6 +298,14 @@ void game_destroy(GAME *game) {
         al_destroy_font(game->font);
         game->font = NULL;
     }
+    if (game->tiles) {
+        al_destroy_bitmap(game->tiles);
+        game->tiles = NULL;
+    }
+    if (game->playfield) {
+        al_destroy_bitmap(game->playfield);
+        game->playfield = NULL;
+    }
     if (game->event_queue) {
         al_destroy_event_queue(game->event_queue);
         game->event_queue = NULL;
@@ -347,9 +360,22 @@ STATUS game_init(GAME *game) {
     al_register_event_source(game->event_queue,
         al_get_keyboard_event_source());
 
-    // la fuente y la musica son opcionales: si faltan, el juego sigue
+    // la fuente, las imagenes y la musica son opcionales: si faltan,
+    // el juego sigue (con un fallback de colores planos para los graficos)
     game->font = al_load_ttf_font(FONT_RSC, 18, 0);
     game->music = al_load_sample(SND_MUSIC);
+
+    // Game Boy sprite sheets: load and make the purple background transparent
+    game->playfield = al_load_bitmap(IMG_PLAYFIELDS);
+    if (game->playfield) {
+        al_convert_mask_to_alpha(game->playfield,
+            al_map_rgb(MASK_R, MASK_G, MASK_B));
+    }
+    game->tiles = al_load_bitmap(IMG_TILES);
+    if (game->tiles) {
+        al_convert_mask_to_alpha(game->tiles,
+            al_map_rgb(MASK_R, MASK_G, MASK_B));
+    }
 
     game->board = board_create();
     if (!game->board) {
@@ -808,7 +834,7 @@ static STATUS game_update_play(GAME *game, ALLEGRO_KEYBOARD_STATE *key) {
         // bloquear inmediatamente
         piece_get_blocks(game->piece, blocks);
         board_lock_piece(game->board, blocks,
-            piece_get_color(piece_get_type(game->piece)));
+            piece_get_type(game->piece));
         cleared = board_clear_lines(game->board);
         if (cleared > 0) {
             game_add_score(game, cleared);
@@ -861,7 +887,7 @@ static STATUS game_update_play(GAME *game, ALLEGRO_KEYBOARD_STATE *key) {
         if (game->lock_timer >= LOCK_DELAY) {
             piece_get_blocks(game->piece, blocks);
             board_lock_piece(game->board, blocks,
-                piece_get_color(piece_get_type(game->piece)));
+                piece_get_type(game->piece));
             cleared = board_clear_lines(game->board);
             if (cleared > 0) {
                 game_add_score(game, cleared);
@@ -1019,7 +1045,7 @@ STATUS game_render(GAME *game) {
 
     al_clear_to_color(COLOR_BG);
 
-    board_print(game->board);
+    board_print(game->board, game->playfield, game->tiles);
 
     if (game->state == STATE_PLAY || game->state == STATE_PAUSE) {
         // ghost piece
@@ -1030,12 +1056,12 @@ STATUS game_render(GAME *game) {
             piece_set_x(ghost, piece_get_x(game->piece));
             piece_set_y(ghost, piece_get_y(game->piece));
             game_move_ghost(game, ghost);
-            piece_print(ghost, true);
+            piece_print(ghost, game->tiles, true);
             piece_destroy(ghost);
         }
 
         // active piece
-        piece_print(game->piece, false);
+        piece_print(game->piece, game->tiles, false);
     }
 
     game_print_preview(game);
@@ -1062,7 +1088,6 @@ static STATUS game_print_preview(GAME *game) {
     float cs = (float) PREVIEW_CELL;
     float px = (float) PREVIEW_X;
     float py = (float) PREVIEW_Y;
-    ALLEGRO_COLOR clr;
 
     if (!game) {
         return ERROR;
@@ -1080,16 +1105,13 @@ static STATUS game_print_preview(GAME *game) {
             px + 2.0f * cs, py - 22.0f, ALLEGRO_ALIGN_CENTER, "NEXT");
     }
 
-    // draw the next piece centred in the preview box
-    clr = piece_get_color(game->next_type);
+    // draw the next piece centred in the preview box, with its GB tile
     piece_get_blocks_at(game->next_type, 0, 0, 0, blocks);
 
     for (i = 0; i < 4; i++) {
         bx = px + (float) blocks[i][0] * cs;
         by = py + (float) blocks[i][1] * cs;
-        al_draw_filled_rectangle(bx, by, bx + cs, by + cs, clr);
-        al_draw_filled_rectangle(bx + 1.0f, by + 1.0f,
-            bx + cs - 2.0f, by + cs - 2.0f, clr);
+        piece_draw_tile(game->tiles, game->next_type, bx, by, cs, 1.0f);
     }
 
     return OK;
@@ -1154,6 +1176,14 @@ static STATUS game_print_overlay(GAME *game) {
 
     if (!game->font) {
         return OK;
+    }
+
+    // dim the background so the overlay text stays readable over the light
+    // Game Boy well (same approach as Space Invaders)
+    if (game->state != STATE_PLAY) {
+        al_draw_filled_rectangle(0, 0,
+            (float) DISPLAY_WIDTH, (float) DISPLAY_HEIGHT,
+            al_map_rgba(0, 0, 0, 200));
     }
 
     switch (game->state) {

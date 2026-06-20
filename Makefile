@@ -23,7 +23,7 @@ src/main.o: src/main.c include/game.h include/config.h
 src/game.o: src/game.c include/game.h include/config.h include/board.h include/piece.h
 	$(CC) $(FLAGS) -c src/game.c -o src/game.o
 
-src/board.o: src/board.c include/board.h include/config.h
+src/board.o: src/board.c include/board.h include/config.h include/piece.h
 	$(CC) $(FLAGS) -c src/board.c -o src/board.o
 
 src/piece.o: src/piece.c include/piece.h include/config.h

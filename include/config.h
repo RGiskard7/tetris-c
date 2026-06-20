@@ -22,6 +22,34 @@
 #define FONT_RSC       "resources/fonts/space_invaders.ttf"
 #define SND_MUSIC      "resources/sounds/sound.mp3"
 
+// Game Boy sprite sheets
+#define IMG_PLAYFIELDS "resources/images/Game Boy _ GBC - Tetris - Miscellaneous - Playfields.png"
+#define IMG_TILES      "resources/images/Game Boy _ GBC - Tetris - Miscellaneous - Tetriminos & Block Tiles.png"
+
+// Purple background of the GB sheets, made transparent with
+// al_convert_mask_to_alpha after loading.
+#define MASK_R           72
+#define MASK_G           40
+#define MASK_B           96
+
+// Source block tile size on the sheet (Game Boy tiles are 8x8 px)
+#define TILE_SRC          8
+
+// Empty well region of the playfields sheet, used as the board background.
+// Light interior of the first MARIO VS. LUIGI playfield (no stacked blocks).
+#define WELL_SRC_X       20
+#define WELL_SRC_Y      320
+#define WELL_SRC_W       70
+#define WELL_SRC_H      134
+
+// Brick wall column of the GAME TYPE A playfield. Drawn on the left of the
+// board and mirrored on the right to frame the well like the real Game Boy.
+#define WALL_SRC_X      173
+#define WALL_SRC_Y       10
+#define WALL_SRC_W        8
+#define WALL_SRC_H      140
+#define WALL_DST_W       28
+
 // Board geometry (10 cols x 22 rows: 20 visible + 2 hidden at the top)
 #define BOARD_COLS      10
 #define BOARD_ROWS      22

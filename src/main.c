@@ -34,6 +34,7 @@ typedef struct {
   bool is_keyboard_initialized;
   bool is_font_initialized;
   bool is_ttf_initialized;
+  bool is_image_initialized;
   bool is_audio_initialized;
 } Flags;
 
@@ -51,7 +52,7 @@ void window_configuration(GAME *game);
  */
 int main(void) {
   GAME *game = NULL;
-  Flags flags = {false, false, false, false, false};
+  Flags flags = {false, false, false, false, false, false};
   ALLEGRO_KEYBOARD_STATE key;
 
   srand((unsigned)time(NULL));
@@ -109,7 +110,7 @@ int main(void) {
  * @brief Initializes Allegro and its required addons.
  *
  * Initializes core Allegro and modules for primitives, keyboard,
- * fonts and TTF.
+ * fonts, TTF, images and audio.
  *
  * @param flags Pointer to Flags structure to mark successful init.
  * @return true if all modules initialized successfully, false otherwise.
@@ -143,6 +144,12 @@ bool init_allegro(Flags *flags) {
     return false;
   }
   flags->is_ttf_initialized = true;
+
+  if (!al_init_image_addon()) {
+    fprintf(stderr, "Error initializing Allegro Image Addon.\n");
+    return false;
+  }
+  flags->is_image_initialized = true;
 
   if (!al_install_audio()) {
     fprintf(stderr, "Error installing Allegro Audio.\n");
@@ -202,6 +209,10 @@ void clean_up(Flags *flags, GAME *game) {
 
   if (flags->is_audio_initialized) {
     al_uninstall_audio();
+  }
+
+  if (flags->is_image_initialized) {
+    al_shutdown_image_addon();
   }
 
   if (flags->is_ttf_initialized) {

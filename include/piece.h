@@ -103,12 +103,30 @@ STATUS piece_rotate_cw(PIECE *piece);
 ALLEGRO_COLOR piece_get_color(int type);
 
 /**
- * @brief Renders the piece on the board, optionally as a ghost.
+ * @brief Draws a single block tile scaled from the Game Boy sheet.
+ *
+ * Cuts the 8x8 source tile for the given piece type out of the tiles
+ * sheet and scales it to the destination square. If tiles is NULL it
+ * falls back to a solid colour rectangle so the game still runs.
+ *
+ * @param tiles Tiles sprite sheet, or NULL for the colour fallback.
+ * @param type Piece type (0-6) selecting which tile to draw.
+ * @param x Destination top-left x in pixels.
+ * @param y Destination top-left y in pixels.
+ * @param size Destination square side in pixels.
+ * @param alpha Opacity in [0, 1] (used for the ghost piece).
+ */
+void piece_draw_tile(ALLEGRO_BITMAP *tiles, int type, float x, float y,
+    float size, float alpha);
+
+/**
+ * @brief Renders the piece on the board using the Game Boy block tiles.
  *
  * @param piece Pointer to the PIECE.
- * @param ghost If true draws with the ghost colour.
+ * @param tiles Tiles sprite sheet, or NULL for the colour fallback.
+ * @param ghost If true draws translucent (ghost piece).
  * @return OK on success, ERROR if piece is NULL.
  */
-STATUS piece_print(PIECE *piece, bool ghost);
+STATUS piece_print(PIECE *piece, ALLEGRO_BITMAP *tiles, bool ghost);
 
 #endif /* PIECE_H */
