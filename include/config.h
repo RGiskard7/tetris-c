@@ -62,7 +62,6 @@
 #define PTS_TRIPLE      300
 #define PTS_TETRIS     1200
 #define PTS_SOFT_DROP     1
-#define PTS_HARD_DROP     2
 
 // Level progression (10 lines per level, 30 levels 0-29)
 #define LINES_PER_LEVEL  10
@@ -72,15 +71,11 @@
 #define DAS_DELAY        16
 #define DAS_REPEAT        6
 
-// Lock delay in frames (brief, as in NES)
-#define LOCK_DELAY       15
-
 // Colours
 #define COLOR_BG        al_map_rgb(0, 0, 0)
 #define COLOR_BOARD_BG  al_map_rgb(20, 20, 20)
 #define COLOR_GRID      al_map_rgb(45, 45, 45)
 #define COLOR_BORDER    al_map_rgb(100, 100, 100)
-#define COLOR_GHOST     al_map_rgb(60, 60, 60)
 
 // Tetromino colours (standard)
 #define COLOR_I         al_map_rgb(0, 240, 240)

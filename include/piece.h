@@ -103,12 +103,11 @@ STATUS piece_rotate_cw(PIECE *piece);
 ALLEGRO_COLOR piece_get_color(int type);
 
 /**
- * @brief Renders the piece on the board, optionally as a ghost.
+ * @brief Renders the piece on the board.
  *
  * @param piece Pointer to the PIECE.
- * @param ghost If true draws with the ghost colour.
  * @return OK on success, ERROR if piece is NULL.
  */
-STATUS piece_print(PIECE *piece, bool ghost);
+STATUS piece_print(PIECE *piece);
 
 #endif /* PIECE_H */

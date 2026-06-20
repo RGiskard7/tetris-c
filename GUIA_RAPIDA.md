@@ -38,7 +38,6 @@ scripts/dist.sh        # macOS / Linux
 | Left / Right | Mover pieza          |
 | Down         | Caida suave (soft drop) |
 | Up           | Rotar pieza (90 grados) |
-| Space        | Caida instantanea (hard drop) |
 | P            | Pausa                |
 | Enter        | Iniciar / Reiniciar  |
 | Escape       | Salir (titulo) / Pausa (juego) |
@@ -61,9 +60,9 @@ scripts/dist.sh        # macOS / Linux
 - Velocidad desde 48 frames/fila (nivel 0) hasta 1 frame/fila (nivel 29, el "kill screen")
 - Puntuacion: Single=40, Double=100, Triple=300, Tetris=1200 (todo x nivel+1)
 - Sin wall kicks: si una rotacion choca, falla
-- Lock delay breve que se reinicia al mover o rotar la pieza
+- La pieza se fija en el tick de gravedad en que ya no puede caer (sin lock delay ni hard drop, como la NES)
 - La partida termina por Block Out (la pieza siguiente no puede aparecer)
-- Musica de fondo durante la partida (se para en pausa y game over)
+- Musica de fondo durante la partida (se pausa y reanuda sin reiniciar)
 - Tabla de records (top 5) persistente en `highscores.dat`
 
 ---

@@ -15,7 +15,6 @@
 | Left / Right | Mover pieza          |
 | Down         | Caida suave (soft drop) |
 | Up           | Rotar pieza (90 grados) |
-| Space        | Caida instantanea (hard drop) |
 | P            | Pausa                |
 | Enter        | Iniciar / Reiniciar  |
 | Escape       | Salir (titulo) / Pausa (juego) |
@@ -31,12 +30,11 @@ Limpia lineas completas para sumar puntos. Cada 10 lineas subes de nivel y la ve
 - Sistema de puntuacion NES: Single = 40, Double = 100, Triple = 300, Tetris = 1200 (todo x nivel+1)
 - Generador de piezas con reroll: si la pieza sale igual que la anterior, vuelve a tirar una vez
 - Sin wall kicks (fiel al original: si la rotacion choca, simplemente falla)
-- Lock delay breve que se reinicia al mover o rotar la pieza
-- Caida suave (soft drop, +1 punto/fila) y caida instantanea (hard drop, +2 puntos/fila)
+- Fijado de pieza en el tick de gravedad, sin lock delay ni hard drop (como en la NES)
+- Caida suave (soft drop, +1 punto/fila)
 - DAS (Delayed Auto Shift) para movimiento lateral fluido
-- Ghost piece que muestra donde caera la pieza
 - Previsualizacion de la siguiente pieza
-- Musica de fondo durante la partida (se para en pausa y game over)
+- Musica de fondo durante la partida (se pausa y reanuda sin reiniciar)
 - Tabla de los 5 mejores records guardada en disco
 - Pantalla de titulo alternando entre el titulo y la tabla de records
 - Entrada de 3 iniciales al conseguir un nuevo record

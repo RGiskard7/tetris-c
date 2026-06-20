@@ -7,7 +7,7 @@
 | `src/main.c` | ~220 | Entrada, inicializa Allegro, bucle principal |
 | `src/game.c` | ~1270 | Logica central: estados, input, gravedad, scoring, high scores, musica, render |
 | `src/board.c` | ~310 | Tablero 10x22: colisiones, bloqueo, limpieza de lineas, render |
-| `src/piece.c` | ~430 | Tetriminos: 7 piezas x 4 rotaciones, offsets, render, ghost |
+| `src/piece.c` | ~430 | Tetriminos: 7 piezas x 4 rotaciones, offsets, render |
 | `include/config.h` | ~108 | Constantes, geometria, colores, velocidades, scoring y reglas |
 
 ## Arquitectura
@@ -17,7 +17,7 @@
 - Maquina de 5 estados: titulo, jugando, pausa, game over, entrada de iniciales (high score)
 - Array `bool filled[22][10]` para celdas ocupadas (evita `al_unmap_rgba`)
 - Recursos creados y destruidos explicitamente, en orden correcto
-- Musica de fondo con `ALLEGRO_PLAYMODE_LOOP`, se para en pausa y game over
+- Musica de fondo con `ALLEGRO_PLAYMODE_LOOP` via sample instance, se pausa y reanuda sin reiniciar
 
 ## Fidelidad al NES original
 
@@ -28,11 +28,10 @@
 - Cada 10 lineas limpias = subida de nivel
 - Scoring NES: 40/100/300/1200 puntos, multiplicado por (nivel + 1)
 - Reroll randomizer: si la pieza generada es igual a la anterior, tira otra vez
-- Lock delay de 15 frames que se reinicia al mover o rotar la pieza
+- La pieza se fija en el tick de gravedad en que ya no puede caer, sin lock delay (el margen para moverla equivale al intervalo de gravedad, como en la NES)
+- Sin hard drop ni ghost piece (no existen en la NES)
 - Block Out como condicion de derrota (la pieza no puede spawnear)
 - Soft drop: +1 punto por fila bajada manualmente
-- Hard drop: +2 puntos por fila, caida y bloqueo instantaneos
-- Ghost piece que muestra la posicion final de caida
 - Preview de la siguiente pieza en el lateral derecho
 - DAS con delay de 16 frames y repeticion cada 6 frames
 

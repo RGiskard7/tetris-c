@@ -2,10 +2,11 @@
  * @file game.c
  * @brief Core game logic: state machine, input, gravity, scoring and rendering.
  *
- * Implements classic Tetris: seven tetrominoes, level-based gravity,
- * delayed auto-shift (DAS), lock delay, ghost piece, line clearing
- * with NES-style scoring, next-piece preview and a four-state
- * state machine (title, play, pause, game over).
+ * Implements classic NES Tetris: seven tetrominoes, level-based gravity,
+ * delayed auto-shift (DAS), gravity-tick locking (no lock delay or hard
+ * drop, as in the original), line clearing with NES scoring, next-piece
+ * preview and a five-state machine (title, play, pause, game over, high
+ * score entry).
  *
  * Author: RGiskard7
  * Date: 20/06/2026
@@ -32,7 +33,7 @@ struct _game {
     ALLEGRO_EVENT events;               ///< Last event polled
     ALLEGRO_FONT *font;                 ///< TTF font for HUD and overlays
     ALLEGRO_SAMPLE *music;              ///< Background music sample
-    ALLEGRO_SAMPLE_ID music_id;         ///< ID of the playing music instance
+    ALLEGRO_SAMPLE_INSTANCE *music_inst;///< Playing instance (pause keeps position)
     bool music_playing;                 ///< True while music is active
 
     BOARD *board;                       ///< Locked-cell grid
@@ -48,8 +49,6 @@ struct _game {
     int lines;                          ///< Total lines cleared
 
     int gravity_timer;                  ///< Frames since last gravity tick
-    int lock_timer;                     ///< Frames the piece has been on the ground
-    bool piece_on_ground;               ///< True when piece can't move down
 
     int das_timer;                      ///< Frames remaining until DAS repeat
     int das_dir;                        ///< DIR_LEFT or DIR_RIGHT when DAS is active
@@ -57,11 +56,12 @@ struct _game {
     int title_timer;                    ///< Counter for blinking title text
     bool enter_was_down;                ///< Edge detection for ENTER
     bool pause_was_down;                ///< Edge detection for P
+    bool esc_was_down;                  ///< Edge detection for ESC
     bool up_was_down;                   ///< Edge detection for rotate
-    bool space_was_down;                ///< Edge detection for hard drop
 
     TOP_ENTRY top_scores[MAX_TOP_SCORES + 1]; ///< Top 5 high scores (+1 for insert)
     bool hs_entry_active;               ///< True when entering initials
+    int hs_entry_rank;                  ///< Index where the new score was inserted
     int hs_entry_pos;                   ///< Current letter position (0-2)
     int hs_entry_cursor_timer;          ///< Timer for blinking cursor
     char hs_letters[3];                 ///< Letters being entered
@@ -85,14 +85,14 @@ static const int _line_scores[4] = {
 
 static STATUS game_load_top_scores(GAME *game);
 static STATUS game_save_top_scores(GAME *game);
-static void   game_insert_top_score(GAME *game, int score);
+static int    game_insert_top_score(GAME *game, int score);
 static int    game_highscore_verify(GAME *game, int score);
 static STATUS game_new_game(GAME *game);
 static STATUS game_spawn_piece(GAME *game);
 static int    game_random_piece(GAME *game, int last_type);
 static int    game_get_gravity(GAME *game);
 static void   game_add_score(GAME *game, int lines_cleared);
-static void   game_move_ghost(GAME *game, PIECE *ghost);
+static void   game_music(GAME *game, bool playing, bool rewind);
 static STATUS game_update_play(GAME *game, ALLEGRO_KEYBOARD_STATE *key);
 
 static STATUS game_update_highscore(GAME *game, ALLEGRO_KEYBOARD_STATE *key);
@@ -164,13 +164,14 @@ static STATUS game_save_top_scores(GAME *game) {
  *
  * @param game Pointer to the game.
  * @param score Score to insert.
+ * @return Index where the score was inserted, or -1 if it did not qualify.
  */
-static void game_insert_top_score(GAME *game, int score) {
+static int game_insert_top_score(GAME *game, int score) {
     int i = 0;
     int j = 0;
 
     if (!game || score <= 0) {
-        return;
+        return -1;
     }
 
     for (i = 0; i <= MAX_TOP_SCORES; i++) {
@@ -180,9 +181,11 @@ static void game_insert_top_score(GAME *game, int score) {
             }
             strcpy(game->top_scores[i].name, "---");
             game->top_scores[i].score = score;
-            break;
+            return i;
         }
     }
+
+    return -1;
 }
 
 /**
@@ -230,6 +233,7 @@ GAME *game_create(void) {
     new_game->event_queue = NULL;
     new_game->font = NULL;
     new_game->music = NULL;
+    new_game->music_inst = NULL;
     new_game->music_playing = false;
     new_game->board = NULL;
     new_game->piece = NULL;
@@ -245,8 +249,6 @@ GAME *game_create(void) {
     new_game->lines = 0;
 
     new_game->gravity_timer = 0;
-    new_game->lock_timer = 0;
-    new_game->piece_on_ground = false;
 
     new_game->das_timer = 0;
     new_game->das_dir = DIR_NONE;
@@ -254,8 +256,8 @@ GAME *game_create(void) {
     new_game->title_timer = 0;
     new_game->enter_was_down = true;
     new_game->pause_was_down = true;
+    new_game->esc_was_down = true;
     new_game->up_was_down = true;
-    new_game->space_was_down = true;
 
     for (int i = 0; i <= MAX_TOP_SCORES; i++) {
         strcpy(new_game->top_scores[i].name, "---");
@@ -284,8 +286,12 @@ void game_destroy(GAME *game) {
         board_destroy(game->board);
         game->board = NULL;
     }
+    if (game->music_inst) {
+        al_set_sample_instance_playing(game->music_inst, false);
+        al_destroy_sample_instance(game->music_inst);
+        game->music_inst = NULL;
+    }
     if (game->music) {
-        al_stop_sample(&game->music_id);
         al_destroy_sample(game->music);
         game->music = NULL;
     }
@@ -347,9 +353,19 @@ STATUS game_init(GAME *game) {
     al_register_event_source(game->event_queue,
         al_get_keyboard_event_source());
 
-    // la fuente y la musica son opcionales: si faltan, el juego sigue
+    // the font and music are optional: the game still runs without them
     game->font = al_load_ttf_font(FONT_RSC, 18, 0);
     game->music = al_load_sample(SND_MUSIC);
+    if (game->music) {
+        game->music_inst = al_create_sample_instance(game->music);
+        if (game->music_inst) {
+            al_set_sample_instance_playmode(game->music_inst,
+                ALLEGRO_PLAYMODE_LOOP);
+            al_set_sample_instance_gain(game->music_inst, 0.4f);
+            al_attach_sample_instance_to_mixer(game->music_inst,
+                al_get_default_mixer());
+        }
+    }
 
     game->board = board_create();
     if (!game->board) {
@@ -460,10 +476,7 @@ static STATUS game_new_game(GAME *game) {
     game->level = 0;
     game->lines = 0;
     game->gravity_timer = 0;
-    game->lock_timer = 0;
-    game->piece_on_ground = false;
     game->up_was_down = true;
-    game->space_was_down = true;
 
     board_clear(game->board);
 
@@ -516,18 +529,13 @@ static STATUS game_spawn_piece(GAME *game) {
 
     if (board_check_collision(game->board, blocks)) {
         game->state = STATE_OVER;
-        if (game->music_playing) {
-            al_stop_sample(&game->music_id);
-            game->music_playing = false;
-        }
+        game_music(game, false, true);
 
         return ERROR;
     }
 
     game->next_type = game_random_piece(game, piece_get_type(game->piece));
     game->gravity_timer = 0;
-    game->lock_timer = 0;
-    game->piece_on_ground = false;
 
     return OK;
 }
@@ -572,26 +580,26 @@ static void game_add_score(GAME *game, int lines_cleared) {
 }
 
 /**
- * @brief Moves a ghost piece down until it collides with the board.
+ * @brief Controls background music playback.
+ *
+ * Pausing keeps the playback position so resuming continues the track
+ * instead of restarting it. Pass rewind = true to seek back to the start
+ * (used when a new game begins or after game over).
  *
  * @param game Pointer to the game.
- * @param ghost Piece to modify (starts from the active piece state).
+ * @param playing True to play/resume, false to pause/stop.
+ * @param rewind True to reset the playback position to the start.
  */
-static void game_move_ghost(GAME *game, PIECE *ghost) {
-    int blocks[4][2];
-
-    if (!game || !ghost) {
+static void game_music(GAME *game, bool playing, bool rewind) {
+    if (!game || !game->music_inst) {
         return;
     }
 
-    while (true) {
-        piece_move(ghost, 0, 1);
-        piece_get_blocks(ghost, blocks);
-        if (board_check_collision(game->board, blocks)) {
-            piece_move(ghost, 0, -1);
-            break;
-        }
+    if (rewind) {
+        al_set_sample_instance_position(game->music_inst, 0);
     }
+    al_set_sample_instance_playing(game->music_inst, playing);
+    game->music_playing = playing;
 }
 
 // =========================================================================
@@ -607,14 +615,38 @@ static void game_move_ghost(GAME *game, PIECE *ghost) {
  */
 STATUS game_update(GAME *game, ALLEGRO_KEYBOARD_STATE *key) {
     bool enter_now = false;
+    bool esc_now = false;
 
     if (!game || !key) {
         return ERROR;
     }
 
-    // ESC sale del juego salvo durante la partida (donde pausa)
-    if (game->state != STATE_PLAY && al_key_down(key, ALLEGRO_KEY_ESCAPE)) {
-        game->done = true;
+    // ESC is edge-detected: it quits from the menus and toggles pause
+    // during the game. Without edge detection a held ESC used to pause
+    // would leak into the next frame and quit the game. The high score
+    // screen handles ESC on its own (skip), so it is left untouched here.
+    esc_now = al_key_down(key, ALLEGRO_KEY_ESCAPE);
+    if (esc_now && !game->esc_was_down) {
+        switch (game->state) {
+            case STATE_TITLE:
+            case STATE_OVER:
+                game->done = true;
+                break;
+            case STATE_PLAY:
+                game->state = STATE_PAUSE;
+                game_music(game, false, false);
+                break;
+            case STATE_PAUSE:
+                game->state = STATE_PLAY;
+                game_music(game, true, false);
+                break;
+            default:
+                break;
+        }
+    }
+    game->esc_was_down = esc_now;
+
+    if (game->done) {
         return OK;
     }
 
@@ -625,11 +657,7 @@ STATUS game_update(GAME *game, ALLEGRO_KEYBOARD_STATE *key) {
             if (enter_now && !game->enter_was_down) {
                 if (game_new_game(game) == OK) {
                     game->state = STATE_PLAY;
-                    if (game->music && !game->music_playing) {
-                        al_play_sample(game->music, 0.4f, 0, 1.0f,
-                            ALLEGRO_PLAYMODE_LOOP, &game->music_id);
-                        game->music_playing = true;
-                    }
+                    game_music(game, true, true);
                 }
             }
             game->enter_was_down = enter_now;
@@ -643,11 +671,7 @@ STATUS game_update(GAME *game, ALLEGRO_KEYBOARD_STATE *key) {
             bool p_now = al_key_down(key, ALLEGRO_KEY_P);
             if (p_now && !game->pause_was_down) {
                 game->state = STATE_PLAY;
-                if (game->music && !game->music_playing) {
-                    al_play_sample(game->music, 0.4f, 0, 1.0f,
-                        ALLEGRO_PLAYMODE_LOOP, &game->music_id);
-                    game->music_playing = true;
-                }
+                game_music(game, true, false);
             }
             game->pause_was_down = p_now;
             break;
@@ -663,7 +687,8 @@ STATUS game_update(GAME *game, ALLEGRO_KEYBOARD_STATE *key) {
                     game->hs_entry_cursor_timer = 0;
                     game->hs_entry_delay = 45;
                     game->hs_enter_needs_release = true;
-                    game_insert_top_score(game, game->score);
+                    game->hs_entry_rank =
+                        game_insert_top_score(game, game->score);
                     game->state = STATE_HIGHSCORE;
                 } else {
                     game->state = STATE_TITLE;
@@ -697,7 +722,6 @@ static STATUS game_update_play(GAME *game, ALLEGRO_KEYBOARD_STATE *key) {
     bool left = false;
     bool right = false;
     bool down = false;
-    bool space = false;
     bool up = false;
     bool p_now = false;
     int cleared = 0;
@@ -706,44 +730,28 @@ static STATUS game_update_play(GAME *game, ALLEGRO_KEYBOARD_STATE *key) {
         return ERROR;
     }
 
-    // pausa con deteccion de flanco
+    // pause with edge detection
     p_now = al_key_down(key, ALLEGRO_KEY_P);
     if (p_now && !game->pause_was_down) {
         game->state = STATE_PAUSE;
         game->pause_was_down = p_now;
-        if (game->music_playing) {
-            al_stop_sample(&game->music_id);
-            game->music_playing = false;
-        }
+        game_music(game, false, false);
         return OK;
     }
     game->pause_was_down = p_now;
 
-    // ESC tambien pausa durante la partida
-    if (al_key_down(key, ALLEGRO_KEY_ESCAPE)) {
-        game->state = STATE_PAUSE;
-        if (game->music_playing) {
-            al_stop_sample(&game->music_id);
-            game->music_playing = false;
-        }
-        return OK;
-    }
-
     left = al_key_down(key, ALLEGRO_KEY_LEFT);
     right = al_key_down(key, ALLEGRO_KEY_RIGHT);
     down = al_key_down(key, ALLEGRO_KEY_DOWN);
-    space = al_key_down(key, ALLEGRO_KEY_SPACE);
     up = al_key_down(key, ALLEGRO_KEY_UP);
 
-    // DAS (Delayed Auto Shift) para izquierda y derecha
+    // DAS (Delayed Auto Shift) for left and right
     if (left && !right) {
         if (game->das_dir != DIR_LEFT || game->das_timer <= 0) {
             piece_move(game->piece, -1, 0);
             piece_get_blocks(game->piece, blocks);
             if (board_check_collision(game->board, blocks)) {
-                piece_move(game->piece, 1, 0); // deshacer
-            } else {
-                game->lock_timer = 0;
+                piece_move(game->piece, 1, 0); // undo
             }
             if (game->das_dir == DIR_LEFT) {
                 game->das_timer = DAS_REPEAT;
@@ -758,9 +766,7 @@ static STATUS game_update_play(GAME *game, ALLEGRO_KEYBOARD_STATE *key) {
             piece_move(game->piece, 1, 0);
             piece_get_blocks(game->piece, blocks);
             if (board_check_collision(game->board, blocks)) {
-                piece_move(game->piece, -1, 0); // deshacer
-            } else {
-                game->lock_timer = 0;
+                piece_move(game->piece, -1, 0); // undo
             }
             if (game->das_dir == DIR_RIGHT) {
                 game->das_timer = DAS_REPEAT;
@@ -775,8 +781,8 @@ static STATUS game_update_play(GAME *game, ALLEGRO_KEYBOARD_STATE *key) {
         game->das_timer = 0;
     }
 
-    // rotacion con deteccion de flanco (una pulsacion = un giro)
-    // NES original: sin wall kicks, la rotacion falla si hay colision
+    // rotation with edge detection (one key press = one turn).
+    // NES original: no wall kicks, rotation fails if it collides.
     if (up && !game->up_was_down) {
         int orig_rot = piece_get_rotation(game->piece);
 
@@ -784,60 +790,26 @@ static STATUS game_update_play(GAME *game, ALLEGRO_KEYBOARD_STATE *key) {
         piece_get_blocks(game->piece, blocks);
 
         if (board_check_collision(game->board, blocks)) {
-            // rotacion falla, restaurar
-            piece_set_rotation(game->piece, orig_rot);
-        } else {
-            // rotacion exitosa: reiniciar lock delay (NES behaviour)
-            game->lock_timer = 0;
+            piece_set_rotation(game->piece, orig_rot); // rotation failed
         }
     }
     game->up_was_down = up;
 
-    // hard drop (SPACE): bajar instantaneamente y bloquear (flanco)
-    if (space && !game->space_was_down) {
-        while (true) {
-            piece_move(game->piece, 0, 1);
-            piece_get_blocks(game->piece, blocks);
-            if (board_check_collision(game->board, blocks)) {
-                piece_move(game->piece, 0, -1);
-                break;
-            }
-            game->score += PTS_HARD_DROP;
-        }
-
-        // bloquear inmediatamente
-        piece_get_blocks(game->piece, blocks);
-        board_lock_piece(game->board, blocks,
-            piece_get_color(piece_get_type(game->piece)));
-        cleared = board_clear_lines(game->board);
-        if (cleared > 0) {
-            game_add_score(game, cleared);
-        }
-        if (board_is_game_over(game->board)) {
-            game->state = STATE_OVER;
-            if (game->music_playing) {
-                al_stop_sample(&game->music_id);
-                game->music_playing = false;
-            }
-        } else {
-            game_spawn_piece(game);
-        }
-        game->space_was_down = space;
-        return OK;
-    }
-
-    // soft drop: bajar una fila por frame cuando se mantiene pulsado
+    // soft drop: move down one row per frame while held
     if (down) {
         piece_move(game->piece, 0, 1);
         piece_get_blocks(game->piece, blocks);
         if (board_check_collision(game->board, blocks)) {
-            piece_move(game->piece, 0, -1); // no se puede, deshacer
+            piece_move(game->piece, 0, -1); // can't drop, undo
         } else {
             game->score += PTS_SOFT_DROP;
         }
     }
 
-    // gravedad
+    // gravity: drop one row per tick. The piece locks on the tick where it
+    // can no longer fall, exactly as on the NES: there is no separate lock
+    // delay, so the grace period to slide or rotate a landed piece equals
+    // the time remaining until the next gravity tick.
     game->gravity_timer++;
     if (game->gravity_timer >= game_get_gravity(game)) {
         game->gravity_timer = 0;
@@ -846,19 +818,8 @@ static STATUS game_update_play(GAME *game, ALLEGRO_KEYBOARD_STATE *key) {
         piece_get_blocks(game->piece, blocks);
 
         if (board_check_collision(game->board, blocks)) {
-            // la pieza toca suelo, deshacer el movimiento
+            // can't drop: undo, lock the piece and bring in the next one
             piece_move(game->piece, 0, -1);
-            game->piece_on_ground = true;
-        } else {
-            game->piece_on_ground = false;
-            game->lock_timer = 0;
-        }
-    }
-
-    // lock delay: si la pieza esta en el suelo, esperar LOCK_DELAY frames
-    if (game->piece_on_ground) {
-        game->lock_timer++;
-        if (game->lock_timer >= LOCK_DELAY) {
             piece_get_blocks(game->piece, blocks);
             board_lock_piece(game->board, blocks,
                 piece_get_color(piece_get_type(game->piece)));
@@ -868,17 +829,12 @@ static STATUS game_update_play(GAME *game, ALLEGRO_KEYBOARD_STATE *key) {
             }
             if (board_is_game_over(game->board)) {
                 game->state = STATE_OVER;
-                if (game->music_playing) {
-                    al_stop_sample(&game->music_id);
-                    game->music_playing = false;
-                }
+                game_music(game, false, true);
             } else {
                 game_spawn_piece(game);
             }
         }
     }
-
-    game->space_was_down = space;
 
     return OK;
 }
@@ -917,12 +873,16 @@ static STATUS game_update_highscore(GAME *game, ALLEGRO_KEYBOARD_STATE *key) {
         game->hs_entry_cursor_timer = 0;
     }
 
-    // UP: cycle letter forward
+    // UP: cycle letter forward through A-Z then 0-9 (skipping symbols)
     if (al_key_down(key, ALLEGRO_KEY_UP)) {
         if (!up_held) {
-            game->hs_letters[game->hs_entry_pos]++;
-            if (game->hs_letters[game->hs_entry_pos] > 'Z') {
-                game->hs_letters[game->hs_entry_pos] = '0';
+            char *ch = &game->hs_letters[game->hs_entry_pos];
+            if (*ch == 'Z') {
+                *ch = '0';
+            } else if (*ch == '9') {
+                *ch = 'A';
+            } else {
+                (*ch)++;
             }
             up_held = true;
         }
@@ -930,12 +890,16 @@ static STATUS game_update_highscore(GAME *game, ALLEGRO_KEYBOARD_STATE *key) {
         up_held = false;
     }
 
-    // DOWN: cycle letter backward
+    // DOWN: cycle letter backward through 9-0 then Z-A (skipping symbols)
     if (al_key_down(key, ALLEGRO_KEY_DOWN)) {
         if (!down_held) {
-            game->hs_letters[game->hs_entry_pos]--;
-            if (game->hs_letters[game->hs_entry_pos] < '0') {
-                game->hs_letters[game->hs_entry_pos] = 'Z';
+            char *ch = &game->hs_letters[game->hs_entry_pos];
+            if (*ch == 'A') {
+                *ch = '9';
+            } else if (*ch == '0') {
+                *ch = 'Z';
+            } else {
+                (*ch)--;
             }
             down_held = true;
         }
@@ -977,10 +941,13 @@ static STATUS game_update_highscore(GAME *game, ALLEGRO_KEYBOARD_STATE *key) {
         }
     } else if (al_key_down(key, ALLEGRO_KEY_ENTER)) {
         if (!enter_held) {
-            game->top_scores[0].name[0] = game->hs_letters[0];
-            game->top_scores[0].name[1] = game->hs_letters[1];
-            game->top_scores[0].name[2] = game->hs_letters[2];
-            game->top_scores[0].name[3] = '\0';
+            int rank = game->hs_entry_rank;
+            if (rank >= 0 && rank <= MAX_TOP_SCORES) {
+                game->top_scores[rank].name[0] = game->hs_letters[0];
+                game->top_scores[rank].name[1] = game->hs_letters[1];
+                game->top_scores[rank].name[2] = game->hs_letters[2];
+                game->top_scores[rank].name[3] = '\0';
+            }
             game_save_top_scores(game);
             game->hs_entry_active = false;
             game->state = STATE_TITLE;
@@ -1011,8 +978,6 @@ static STATUS game_update_highscore(GAME *game, ALLEGRO_KEYBOARD_STATE *key) {
  * @return STATUS code (OK on success, ERROR if nothing to draw).
  */
 STATUS game_render(GAME *game) {
-    PIECE *ghost = NULL;
-
     if (!game || !game->draw) {
         return ERROR;
     }
@@ -1022,20 +987,7 @@ STATUS game_render(GAME *game) {
     board_print(game->board);
 
     if (game->state == STATE_PLAY || game->state == STATE_PAUSE) {
-        // ghost piece
-        ghost = piece_create();
-        if (ghost) {
-            piece_set_type(ghost, piece_get_type(game->piece));
-            piece_set_rotation(ghost, piece_get_rotation(game->piece));
-            piece_set_x(ghost, piece_get_x(game->piece));
-            piece_set_y(ghost, piece_get_y(game->piece));
-            game_move_ghost(game, ghost);
-            piece_print(ghost, true);
-            piece_destroy(ghost);
-        }
-
-        // active piece
-        piece_print(game->piece, false);
+        piece_print(game->piece);
     }
 
     game_print_preview(game);
@@ -1171,7 +1123,7 @@ static STATUS game_print_overlay(GAME *game) {
                 al_draw_text(game->font, al_map_rgb(200, 200, 200),
                     (float) DISPLAY_WIDTH / 2.0f, 315.0f,
                     ALLEGRO_ALIGN_CENTER,
-                    "UP: rotate   SPACE: hard drop   P: pause");
+                    "UP: rotate   P / ESC: pause");
                 if ((game->title_timer / 30) % 2) {
                     al_draw_text(game->font, al_map_rgb(255, 255, 0),
                         (float) DISPLAY_WIDTH / 2.0f, 370.0f,

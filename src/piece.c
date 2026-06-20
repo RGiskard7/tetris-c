@@ -397,10 +397,9 @@ STATUS piece_rotate_cw(PIECE *piece) {
  * @brief Renders the piece on the board.
  *
  * @param piece Pointer to the piece.
- * @param ghost If true renders with translucent ghost colour.
  * @return OK on success, ERROR if piece is NULL.
  */
-STATUS piece_print(PIECE *piece, bool ghost) {
+STATUS piece_print(PIECE *piece) {
     int blocks[4][2];
     int i = 0;
     float bx = 0.0f;
@@ -416,11 +415,7 @@ STATUS piece_print(PIECE *piece, bool ghost) {
 
     piece_get_blocks(piece, blocks);
 
-    if (ghost) {
-        color = COLOR_GHOST;
-    } else {
-        color = piece_get_color(piece->type);
-    }
+    color = piece_get_color(piece->type);
 
     for (i = 0; i < 4; i++) {
         if (blocks[i][1] < BOARD_HIDDEN) {
@@ -431,10 +426,8 @@ STATUS piece_print(PIECE *piece, bool ghost) {
         by = y0 + (blocks[i][1] - BOARD_HIDDEN) * cs;
 
         al_draw_filled_rectangle(bx, by, bx + cs, by + cs, color);
-        if (!ghost) {
-            al_draw_filled_rectangle(bx + 1.0f, by + 1.0f,
-                bx + cs - 2.0f, by + cs - 2.0f, color);
-        }
+        al_draw_filled_rectangle(bx + 1.0f, by + 1.0f,
+            bx + cs - 2.0f, by + cs - 2.0f, color);
     }
 
     return OK;
