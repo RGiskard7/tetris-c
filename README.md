@@ -20,7 +20,7 @@
 | Enter        | Iniciar / Reiniciar  |
 | Escape       | Salir (titulo) / Pausa (juego) |
 
-Limpia lineas completas para sumar puntos. Cada 10 lineas subes de nivel y la velocidad aumenta. La partida termina cuando una pieza nueva no puede aparecer (Block Out).
+Limpia lineas completas para sumar puntos. Cada 10 lineas subes de nivel y la velocidad aumenta. La partida termina cuando una pieza nueva no puede aparecer (Block Out). Si tu puntuacion entra en el top 5, te pedira tus iniciales de 3 letras. Como en los salones de antes.
 
 ---
 
@@ -36,8 +36,10 @@ Limpia lineas completas para sumar puntos. Cada 10 lineas subes de nivel y la ve
 - DAS (Delayed Auto Shift) para movimiento lateral fluido
 - Ghost piece que muestra donde caera la pieza
 - Previsualizacion de la siguiente pieza
-- Pantalla de titulo, pausa y game over con la puntuacion final
-- Todo en una ventana de 640x700 con el tablero a la izquierda y el HUD a la derecha
+- Musica de fondo durante la partida (se para en pausa y game over)
+- Tabla de los 5 mejores records guardada en disco
+- Pantalla de titulo alternando entre el titulo y la tabla de records
+- Entrada de 3 iniciales al conseguir un nuevo record
 
 Todo ajustable desde `include/config.h`.
 

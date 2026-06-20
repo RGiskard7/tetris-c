@@ -20,6 +20,15 @@ scripts/install-deps.sh
 scripts/build.sh run
 ```
 
+### Generar ejecutable portable
+
+```cmd
+scripts\dist.bat       :: Windows
+```
+```bash
+scripts/dist.sh        # macOS / Linux
+```
+
 ---
 
 ## Controles
@@ -34,6 +43,15 @@ scripts/build.sh run
 | Enter        | Iniciar / Reiniciar  |
 | Escape       | Salir (titulo) / Pausa (juego) |
 
+### Al poner tus iniciales (top 5)
+
+| Tecla          | Accion               |
+|----------------|----------------------|
+| Up / Down      | Cambiar letra        |
+| Left / Right   | Mover cursor         |
+| Enter          | Guardar record       |
+| Escape         | Saltar               |
+
 ---
 
 ## Reglas del original (NES)
@@ -45,22 +63,24 @@ scripts/build.sh run
 - Sin wall kicks: si una rotacion choca, falla
 - Lock delay breve que se reinicia al mover o rotar la pieza
 - La partida termina por Block Out (la pieza siguiente no puede aparecer)
+- Musica de fondo durante la partida (se para en pausa y game over)
+- Tabla de records (top 5) persistente en `highscores.dat`
 
 ---
 
 ## Si algo falla
 
 **"undefined reference" al compilar**
-Faltan las librerias de Allegro. Revisa que `allegro_font-5`, `allegro_ttf-5` y `allegro_primitives-5` esten instaladas.
+Faltan las librerias de Allegro. Revisa que `allegro_font-5`, `allegro_ttf-5`, `allegro_primitives-5`, `allegro_audio-5` y `allegro_acodec-5` esten instaladas.
 
 **No se ve nada o no carga la fuente**
 Ejecuta siempre desde la raiz del proyecto (`tetris-c/`). La fuente `space_invaders.ttf` se copia automaticamente desde los otros proyectos si esta disponible.
 
+**No suena la musica**
+El archivo `resources/sounds/sound.mp3` debe existir. El juego funciona sin musica si el archivo falta.
+
 **Falta `allegro_monolith-5.2.dll` al ejecutar**
 `scripts\build.bat run` la copia sola. Para repartir el juego usa `scripts\dist.bat`.
-
-**La ventana se abre en negro y se cierra**
-Asegurate de que `resources/fonts/space_invaders.ttf` existe. El juego funciona sin ella pero no mostrara texto en los overlays. Puedes copiarla desde `breakout-c/resources/fonts/`.
 
 ---
 
