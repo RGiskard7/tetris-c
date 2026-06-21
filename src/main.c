@@ -161,7 +161,7 @@ bool init_allegro(Flags *flags) {
     return false;
   }
 
-  if (!al_reserve_samples(2)) {
+  if (!al_reserve_samples(8)) {
     fprintf(stderr, "Error reserving samples.\n");
     return false;
   }

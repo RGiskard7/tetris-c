@@ -21,6 +21,9 @@
 // Resources
 #define FONT_RSC       "resources/fonts/space_invaders.ttf"
 #define SND_MUSIC      "resources/sounds/sound.mp3"
+#define SND_TITLE      "resources/sounds/title_screen.mp3"
+#define SND_GAMEOVER   "resources/sounds/game_over.mp3"
+#define SND_NAME       "resources/sounds/name_entry.mp3"
 
 // Game Boy sprite sheets
 #define IMG_PLAYFIELDS "resources/images/Game Boy _ GBC - Tetris - Miscellaneous - Playfields.png"

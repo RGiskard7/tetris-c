@@ -34,9 +34,13 @@ struct _game {
     ALLEGRO_FONT *font;                 ///< TTF font for HUD and overlays
     ALLEGRO_BITMAP *playfield;          ///< GB playfields sheet (well bg)
     ALLEGRO_BITMAP *tiles;              ///< GB tetromino block tiles sheet
-    ALLEGRO_SAMPLE *music;              ///< Background music sample
-    ALLEGRO_SAMPLE_ID music_id;         ///< ID of the playing music instance
-    bool music_playing;                 ///< True while music is active
+    ALLEGRO_SAMPLE *music;              ///< In-game background music
+    ALLEGRO_SAMPLE *snd_title;          ///< Title screen music (loops)
+    ALLEGRO_SAMPLE *snd_gameover;       ///< Game over jingle (plays once)
+    ALLEGRO_SAMPLE *snd_name;           ///< Name entry music (loops)
+    ALLEGRO_SAMPLE_ID music_id;         ///< ID of the current looping track
+    bool music_playing;                 ///< True while a looping track is active
+    int audio_state;                    ///< State whose audio is currently set
 
     BOARD *board;                       ///< Locked-cell grid
     PIECE *piece;                       ///< Active falling tetromino
@@ -96,6 +100,9 @@ static int    game_random_piece(GAME *game, int last_type);
 static int    game_get_gravity(GAME *game);
 static void   game_add_score(GAME *game, int lines_cleared);
 static void   game_move_ghost(GAME *game, PIECE *ghost);
+static void   game_music_stop(GAME *game);
+static void   game_music_loop(GAME *game, ALLEGRO_SAMPLE *sample);
+static void   game_update_audio(GAME *game);
 static STATUS game_update_play(GAME *game, ALLEGRO_KEYBOARD_STATE *key);
 
 static STATUS game_update_highscore(GAME *game, ALLEGRO_KEYBOARD_STATE *key);
@@ -235,7 +242,11 @@ GAME *game_create(void) {
     new_game->playfield = NULL;
     new_game->tiles = NULL;
     new_game->music = NULL;
+    new_game->snd_title = NULL;
+    new_game->snd_gameover = NULL;
+    new_game->snd_name = NULL;
     new_game->music_playing = false;
+    new_game->audio_state = -1;
     new_game->board = NULL;
     new_game->piece = NULL;
 
@@ -289,10 +300,25 @@ void game_destroy(GAME *game) {
         board_destroy(game->board);
         game->board = NULL;
     }
-    if (game->music) {
+    if (game->music_playing) {
         al_stop_sample(&game->music_id);
+        game->music_playing = false;
+    }
+    if (game->music) {
         al_destroy_sample(game->music);
         game->music = NULL;
+    }
+    if (game->snd_title) {
+        al_destroy_sample(game->snd_title);
+        game->snd_title = NULL;
+    }
+    if (game->snd_gameover) {
+        al_destroy_sample(game->snd_gameover);
+        game->snd_gameover = NULL;
+    }
+    if (game->snd_name) {
+        al_destroy_sample(game->snd_name);
+        game->snd_name = NULL;
     }
     if (game->font) {
         al_destroy_font(game->font);
@@ -364,6 +390,9 @@ STATUS game_init(GAME *game) {
     // el juego sigue (con un fallback de colores planos para los graficos)
     game->font = al_load_ttf_font(FONT_RSC, 18, 0);
     game->music = al_load_sample(SND_MUSIC);
+    game->snd_title = al_load_sample(SND_TITLE);
+    game->snd_gameover = al_load_sample(SND_GAMEOVER);
+    game->snd_name = al_load_sample(SND_NAME);
 
     // Game Boy sprite sheets: load and make the purple background transparent
     game->playfield = al_load_bitmap(IMG_PLAYFIELDS);
@@ -542,10 +571,6 @@ static STATUS game_spawn_piece(GAME *game) {
 
     if (board_check_collision(game->board, blocks)) {
         game->state = STATE_OVER;
-        if (game->music_playing) {
-            al_stop_sample(&game->music_id);
-            game->music_playing = false;
-        }
 
         return ERROR;
     }
@@ -621,6 +646,84 @@ static void game_move_ghost(GAME *game, PIECE *ghost) {
 }
 
 // =========================================================================
+// Functions: Audio
+// =========================================================================
+
+/**
+ * @brief Stops the looping background track if one is playing.
+ *
+ * @param game Pointer to the game.
+ */
+static void game_music_stop(GAME *game) {
+    if (game && game->music_playing) {
+        al_stop_sample(&game->music_id);
+        game->music_playing = false;
+    }
+}
+
+/**
+ * @brief Starts a sample as the looping background track, replacing any
+ *        track currently playing.
+ *
+ * @param game Pointer to the game.
+ * @param sample Sample to loop, or NULL to leave silence.
+ */
+static void game_music_loop(GAME *game, ALLEGRO_SAMPLE *sample) {
+    if (!game) {
+        return;
+    }
+
+    game_music_stop(game);
+
+    if (sample) {
+        al_play_sample(sample, 0.4f, 0, 1.0f, ALLEGRO_PLAYMODE_LOOP,
+            &game->music_id);
+        game->music_playing = true;
+    }
+}
+
+/**
+ * @brief Keeps the soundtrack in sync with the current state.
+ *
+ * Each state owns its background sound: the title and name-entry screens
+ * loop their music, play loops the in-game music, pause is silent, and
+ * game over fires its jingle once. Driven by state changes so it only
+ * acts on a transition.
+ *
+ * @param game Pointer to the game.
+ */
+static void game_update_audio(GAME *game) {
+    if (!game || game->audio_state == (int) game->state) {
+        return;
+    }
+    game->audio_state = (int) game->state;
+
+    switch (game->state) {
+        case STATE_TITLE:
+            game_music_loop(game, game->snd_title);
+            break;
+        case STATE_PLAY:
+            game_music_loop(game, game->music);
+            break;
+        case STATE_PAUSE:
+            game_music_stop(game);
+            break;
+        case STATE_OVER:
+            game_music_stop(game);
+            if (game->snd_gameover) {
+                al_play_sample(game->snd_gameover, 0.6f, 0, 1.0f,
+                    ALLEGRO_PLAYMODE_ONCE, NULL);
+            }
+            break;
+        case STATE_HIGHSCORE:
+            game_music_loop(game, game->snd_name);
+            break;
+        default:
+            break;
+    }
+}
+
+// =========================================================================
 // Functions: Game Update
 // =========================================================================
 
@@ -651,11 +754,6 @@ STATUS game_update(GAME *game, ALLEGRO_KEYBOARD_STATE *key) {
             if (enter_now && !game->enter_was_down) {
                 if (game_new_game(game) == OK) {
                     game->state = STATE_PLAY;
-                    if (game->music && !game->music_playing) {
-                        al_play_sample(game->music, 0.4f, 0, 1.0f,
-                            ALLEGRO_PLAYMODE_LOOP, &game->music_id);
-                        game->music_playing = true;
-                    }
                 }
             }
             game->enter_was_down = enter_now;
@@ -669,11 +767,6 @@ STATUS game_update(GAME *game, ALLEGRO_KEYBOARD_STATE *key) {
             bool p_now = al_key_down(key, ALLEGRO_KEY_P);
             if (p_now && !game->pause_was_down) {
                 game->state = STATE_PLAY;
-                if (game->music && !game->music_playing) {
-                    al_play_sample(game->music, 0.4f, 0, 1.0f,
-                        ALLEGRO_PLAYMODE_LOOP, &game->music_id);
-                    game->music_playing = true;
-                }
             }
             game->pause_was_down = p_now;
             break;
@@ -706,6 +799,7 @@ STATUS game_update(GAME *game, ALLEGRO_KEYBOARD_STATE *key) {
             break;
     }
 
+    game_update_audio(game);
     game->draw = true;
 
     return OK;
@@ -737,10 +831,6 @@ static STATUS game_update_play(GAME *game, ALLEGRO_KEYBOARD_STATE *key) {
     if (p_now && !game->pause_was_down) {
         game->state = STATE_PAUSE;
         game->pause_was_down = p_now;
-        if (game->music_playing) {
-            al_stop_sample(&game->music_id);
-            game->music_playing = false;
-        }
         return OK;
     }
     game->pause_was_down = p_now;
@@ -748,10 +838,6 @@ static STATUS game_update_play(GAME *game, ALLEGRO_KEYBOARD_STATE *key) {
     // ESC tambien pausa durante la partida
     if (al_key_down(key, ALLEGRO_KEY_ESCAPE)) {
         game->state = STATE_PAUSE;
-        if (game->music_playing) {
-            al_stop_sample(&game->music_id);
-            game->music_playing = false;
-        }
         return OK;
     }
 
@@ -841,10 +927,6 @@ static STATUS game_update_play(GAME *game, ALLEGRO_KEYBOARD_STATE *key) {
         }
         if (board_is_game_over(game->board)) {
             game->state = STATE_OVER;
-            if (game->music_playing) {
-                al_stop_sample(&game->music_id);
-                game->music_playing = false;
-            }
         } else {
             game_spawn_piece(game);
         }
@@ -894,10 +976,6 @@ static STATUS game_update_play(GAME *game, ALLEGRO_KEYBOARD_STATE *key) {
             }
             if (board_is_game_over(game->board)) {
                 game->state = STATE_OVER;
-                if (game->music_playing) {
-                    al_stop_sample(&game->music_id);
-                    game->music_playing = false;
-                }
             } else {
                 game_spawn_piece(game);
             }
