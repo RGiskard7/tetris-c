@@ -29,24 +29,21 @@
 #define IMG_PLAYFIELDS "resources/images/Game Boy _ GBC - Tetris - Miscellaneous - Playfields.png"
 #define IMG_TILES      "resources/images/Game Boy _ GBC - Tetris - Miscellaneous - Tetriminos & Block Tiles.png"
 
-// Purple background of the GB sheets, made transparent with
-// al_convert_mask_to_alpha after loading.
+// Purple sheet background, made transparent on load
 #define MASK_R           72
 #define MASK_G           40
 #define MASK_B           96
 
-// Source block tile size on the sheet (Game Boy tiles are 8x8 px)
+// Source block tile size (8x8 px)
 #define TILE_SRC          8
 
-// Empty well region of the playfields sheet, used as the board background.
-// Light interior of the first MARIO VS. LUIGI playfield (no stacked blocks).
+// Empty well region used as the board background
 #define WELL_SRC_X       20
 #define WELL_SRC_Y      320
 #define WELL_SRC_W       70
 #define WELL_SRC_H      134
 
-// Brick wall column of the GAME TYPE A playfield. Drawn on the left of the
-// board and mirrored on the right to frame the well like the real Game Boy.
+// Brick wall column, drawn on the left and mirrored on the right
 #define WALL_SRC_X      173
 #define WALL_SRC_Y       10
 #define WALL_SRC_W        8
@@ -83,6 +80,7 @@
 // Pieces
 #define PIECE_TYPES      7
 #define PIECE_SIZE       4
+#define PIECE_I          0   // I (HERO): drawn as a continuous beam, not tiles
 #define SPAWN_X          (BOARD_COLS / 2 - 2)
 #define SPAWN_Y          0
 

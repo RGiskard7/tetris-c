@@ -400,15 +400,14 @@ STATUS game_init(GAME *game) {
     al_register_event_source(game->event_queue,
         al_get_keyboard_event_source());
 
-    // la fuente, las imagenes y la musica son opcionales: si faltan,
-    // el juego sigue (con un fallback de colores planos para los graficos)
+    // fuente, imagenes y musica son opcionales: si faltan, el juego sigue
     game->font = al_load_ttf_font(FONT_RSC, 18, 0);
     game->music = al_load_sample(SND_MUSIC);
     game->snd_title = al_load_sample(SND_TITLE);
     game->snd_gameover = al_load_sample(SND_GAMEOVER);
     game->snd_name = al_load_sample(SND_NAME);
 
-    // Game Boy sprite sheets: load and make the purple background transparent
+    // sprite sheets: hacer transparente el fondo morado
     game->playfield = al_load_bitmap(IMG_PLAYFIELDS);
     if (game->playfield) {
         al_convert_mask_to_alpha(game->playfield,
@@ -639,11 +638,8 @@ static void game_add_score(GAME *game, int lines_cleared) {
 }
 
 /**
- * @brief Locks the active piece onto the board.
- *
- * If the lock completes one or more lines, starts the flash animation
- * (the rows blink before being removed by game_update_play). Otherwise
- * it either ends the game or spawns the next piece right away.
+ * @brief Locks the active piece, then flashes full lines, ends the game
+ *        or spawns the next piece.
  *
  * @param game Pointer to the game.
  */
@@ -707,11 +703,10 @@ static void game_music_stop(GAME *game) {
 }
 
 /**
- * @brief Starts a sample as the looping background track, replacing any
- *        track currently playing.
+ * @brief Loops a sample as the background track, replacing the current one.
  *
  * @param game Pointer to the game.
- * @param sample Sample to loop, or NULL to leave silence.
+ * @param sample Sample to loop, or NULL for silence.
  */
 static void game_music_loop(GAME *game, ALLEGRO_SAMPLE *sample) {
     if (!game) {
@@ -728,12 +723,7 @@ static void game_music_loop(GAME *game, ALLEGRO_SAMPLE *sample) {
 }
 
 /**
- * @brief Keeps the soundtrack in sync with the current state.
- *
- * Each state owns its background sound: the title and name-entry screens
- * loop their music, play loops the in-game music, pause is silent, and
- * game over fires its jingle once. Driven by state changes so it only
- * acts on a transition.
+ * @brief Switches the soundtrack when the game state changes.
  *
  * @param game Pointer to the game.
  */
@@ -788,9 +778,7 @@ STATUS game_update(GAME *game, ALLEGRO_KEYBOARD_STATE *key) {
         return ERROR;
     }
 
-    // ESC sale del juego desde los menus (no durante la partida, donde
-    // pausa). Con deteccion de flanco: una pulsacion mantenida no se cuela
-    // al frame siguiente y cierra el juego tras pausar con ESC.
+    // ESC sale desde los menus (en partida pausa); flanco para no recolar
     esc_now = al_key_down(key, ALLEGRO_KEY_ESCAPE);
     esc_edge = esc_now && !game->esc_was_down;
     game->esc_was_down = esc_now;
@@ -880,8 +868,7 @@ static STATUS game_update_play(GAME *game, ALLEGRO_KEYBOARD_STATE *key) {
         return ERROR;
     }
 
-    // line-clear flash: freeze play while the completed rows blink, then
-    // remove them, score, and continue (or end the game)
+    // flash de lineas: congela mientras parpadean, luego borra y puntua
     if (game->clear_timer > 0) {
         game->clear_timer--;
         if (game->clear_timer == 0) {
@@ -1020,9 +1007,7 @@ static STATUS game_update_play(GAME *game, ALLEGRO_KEYBOARD_STATE *key) {
         }
     }
 
-    // reevaluar si la pieza sigue apoyada cada frame: si la mueves de lado
-    // sobre un hueco deja de estarlo, evitando que se fije en el aire (el
-    // lock delay es mas corto que el intervalo de gravedad en niveles bajos)
+    // reevaluar el apoyo cada frame (si se desliza sobre un hueco, sigue cayendo)
     piece_move(game->piece, 0, 1);
     piece_get_blocks(game->piece, blocks);
     if (board_check_collision(game->board, blocks)) {
@@ -1207,7 +1192,7 @@ STATUS game_render(GAME *game) {
         piece_print(game->piece, game->tiles, false);
     }
 
-    // line-clear flash: the completed rows blink white before disappearing
+    // line-clear flash
     if (game->clear_timer > 0 && (game->clear_timer / 3) % 2 == 0) {
         int i = 0;
         float x0 = (float) BOARD_X0;
@@ -1269,9 +1254,22 @@ static STATUS game_print_preview(GAME *game) {
     piece_get_blocks_at(game->next_type, 0, 0, 0, blocks);
 
     for (i = 0; i < 4; i++) {
-        bx = px + (float) blocks[i][0] * cs;
-        by = py + (float) blocks[i][1] * cs;
-        piece_draw_tile(game->tiles, game->next_type, bx, by, cs, 1.0f);
+        int x = blocks[i][0];
+        int y = blocks[i][1];
+
+        bx = px + (float) x * cs;
+        by = py + (float) y * cs;
+
+        if (game->next_type == PIECE_I) {
+            piece_draw_ibeam(game->tiles,
+                piece_blocks_has(blocks, x - 1, y),
+                piece_blocks_has(blocks, x + 1, y),
+                piece_blocks_has(blocks, x, y - 1),
+                piece_blocks_has(blocks, x, y + 1),
+                bx, by, cs, 1.0f);
+        } else {
+            piece_draw_tile(game->tiles, game->next_type, bx, by, cs, 1.0f);
+        }
     }
 
     return OK;
@@ -1338,8 +1336,7 @@ static STATUS game_print_overlay(GAME *game) {
         return OK;
     }
 
-    // dim the background so the overlay text stays readable over the light
-    // Game Boy well (same approach as Space Invaders)
+    // dim the background behind the overlay
     if (game->state != STATE_PLAY) {
         al_draw_filled_rectangle(0, 0,
             (float) DISPLAY_WIDTH, (float) DISPLAY_HEIGHT,

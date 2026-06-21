@@ -101,6 +101,22 @@ static bool board_is_filled(BOARD *board, int row, int col) {
 }
 
 /**
+ * @brief Checks whether a cell holds a locked I-piece block.
+ *
+ * @param board Pointer to the board.
+ * @param row Row index.
+ * @param col Column index.
+ * @return true if the in-bounds cell is a filled I block.
+ */
+static bool board_is_i(BOARD *board, int row, int col) {
+    if (col < 0 || col >= BOARD_COLS || row < 0 || row >= BOARD_ROWS) {
+        return false;
+    }
+
+    return board->filled[row][col] && board->type[row][col] == PIECE_I;
+}
+
+/**
  * @brief Checks whether a set of four blocks collides with boundaries
  *        or locked cells.
  *
@@ -276,16 +292,11 @@ bool board_is_game_over(BOARD *board) {
 // =========================================================================
 
 /**
- * @brief Renders the board: Game Boy well background and locked tiles.
- *
- * The empty-well region of the playfields sheet is scaled to fill the
- * play area, and each locked cell is drawn with its Game Boy block tile.
- * If a sheet is missing the function falls back to flat colours so the
- * game still runs.
+ * @brief Renders the board: well background, walls and locked tiles.
  *
  * @param board Pointer to the board.
- * @param playfield Playfields sheet for the well background, or NULL.
- * @param tiles Tiles sheet for the locked blocks, or NULL.
+ * @param playfield Playfields sheet for the well, or NULL for a flat fill.
+ * @param tiles Tiles sheet for the locked blocks, or NULL for colours.
  * @return OK on success, ERROR if board is NULL.
  */
 STATUS board_print(BOARD *board, ALLEGRO_BITMAP *playfield,
@@ -304,8 +315,7 @@ STATUS board_print(BOARD *board, ALLEGRO_BITMAP *playfield,
         return ERROR;
     }
 
-    // well background: scaled light interior of the playfields sheet,
-    // framed by the Game Boy brick walls (left, and mirrored on the right)
+    // well background and side walls (left, mirrored on the right)
     if (playfield) {
         al_draw_scaled_bitmap(playfield, WELL_SRC_X, WELL_SRC_Y,
             WELL_SRC_W, WELL_SRC_H, x0, y0, bw, bh, 0);
@@ -318,12 +328,24 @@ STATUS board_print(BOARD *board, ALLEGRO_BITMAP *playfield,
         al_draw_filled_rectangle(x0, y0, x0 + bw, y0 + bh, COLOR_BOARD_BG);
     }
 
-    // locked cells (only visible rows), drawn with their Game Boy tile
+    // locked cells; I blocks join with their neighbours into one beam
     for (r = BOARD_HIDDEN; r < BOARD_ROWS; r++) {
         for (c = 0; c < BOARD_COLS; c++) {
-            if (board->filled[r][c]) {
-                bx = x0 + c * cs;
-                by = y0 + (r - BOARD_HIDDEN) * cs;
+            if (!board->filled[r][c]) {
+                continue;
+            }
+
+            bx = x0 + c * cs;
+            by = y0 + (r - BOARD_HIDDEN) * cs;
+
+            if (board->type[r][c] == PIECE_I) {
+                piece_draw_ibeam(tiles,
+                    board_is_i(board, r, c - 1),
+                    board_is_i(board, r, c + 1),
+                    board_is_i(board, r - 1, c),
+                    board_is_i(board, r + 1, c),
+                    bx, by, cs, 1.0f);
+            } else {
                 piece_draw_tile(tiles, board->type[r][c], bx, by, cs, 1.0f);
             }
         }

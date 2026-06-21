@@ -120,6 +120,35 @@ void piece_draw_tile(ALLEGRO_BITMAP *tiles, int type, float x, float y,
     float size, float alpha);
 
 /**
+ * @brief Tells whether a block list contains the cell (x, y).
+ *
+ * @param blocks Array of 4 (x, y) pairs.
+ * @param x Column to look for.
+ * @param y Row to look for.
+ * @return true if some block is at (x, y).
+ */
+bool piece_blocks_has(int blocks[4][2], int x, int y);
+
+/**
+ * @brief Draws one I-beam cell, joined to its I-piece neighbours.
+ *
+ * The I piece is one bar, not four blocks: the neighbour flags pick the
+ * end caps and the orientation so the cells join seamlessly.
+ *
+ * @param tiles Tiles sheet, or NULL for the colour fallback.
+ * @param left True if the left neighbour is also an I block.
+ * @param right True if the right neighbour is also an I block.
+ * @param up True if the upper neighbour is also an I block.
+ * @param down True if the lower neighbour is also an I block.
+ * @param x Destination x.
+ * @param y Destination y.
+ * @param size Destination side.
+ * @param alpha Opacity (1 = opaque).
+ */
+void piece_draw_ibeam(ALLEGRO_BITMAP *tiles, bool left, bool right,
+    bool up, bool down, float x, float y, float size, float alpha);
+
+/**
  * @brief Renders the piece on the board using the Game Boy block tiles.
  *
  * @param piece Pointer to the PIECE.
