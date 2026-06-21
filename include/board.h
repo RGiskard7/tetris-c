@@ -61,6 +61,18 @@ bool board_check_collision(BOARD *board, int blocks[4][2]);
 STATUS board_lock_piece(BOARD *board, int blocks[4][2], int type);
 
 /**
+ * @brief Finds the completed rows without removing them.
+ *
+ * Used to flash the lines before they are cleared.
+ *
+ * @param board Pointer to the BOARD.
+ * @param rows Output array filled with the indices of the full rows
+ *             (up to 4, top to bottom).
+ * @return Number of full rows found (0-4).
+ */
+int board_find_full_rows(BOARD *board, int rows[4]);
+
+/**
  * @brief Clears every completed row and returns how many were cleared.
  *
  * @param board Pointer to the BOARD.

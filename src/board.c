@@ -195,6 +195,31 @@ static void board_collapse_rows(BOARD *board, int from_row) {
 }
 
 /**
+ * @brief Finds the completed rows without removing them.
+ *
+ * @param board Pointer to the board.
+ * @param rows Output array of full row indices (up to 4).
+ * @return Number of full rows found.
+ */
+int board_find_full_rows(BOARD *board, int rows[4]) {
+    int r = 0;
+    int count = 0;
+
+    if (!board) {
+        return 0;
+    }
+
+    for (r = 0; r < BOARD_ROWS && count < 4; r++) {
+        if (board_is_row_full(board, r)) {
+            rows[count] = r;
+            count++;
+        }
+    }
+
+    return count;
+}
+
+/**
  * @brief Clears every completed row and collapses the board.
  *
  * @param board Pointer to the board.

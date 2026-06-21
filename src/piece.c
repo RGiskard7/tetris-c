@@ -396,12 +396,16 @@ STATUS piece_rotate_cw(PIECE *piece) {
 /**
  * @brief Draws a single block tile scaled from the Game Boy sheet.
  *
- * Source tile coordinates on the "Tetriminos & Block Tiles" sheet: the six
- * framed tiles on the top row (y=100) plus the beveled garbage block at
- * x=104, each 8x8 px. A distinct solid tile is mapped to every piece type
- * so the monochrome pieces stay distinguishable, like on the Game Boy. The
- * dotted fill tile is intentionally avoided: scaled up it reads as loose
- * noise rather than a solid block.
+ * Each piece type uses the exact 8x8 tile that its named figure is drawn
+ * with on the Game Boy sheet, so the pieces look identical to the original:
+ *   I HERO          -> (26,108)  (dotted fill)
+ *   O SMASHBOY      -> (42,100)
+ *   T TEEWEE        -> (18,100)
+ *   S RHODE ISLAND  -> (34,100)
+ *   Z CLEVELAND     -> (26,100)
+ *   J BLUE RICKY    -> (2,100)
+ *   L ORANGE RICKY  -> (10,100)
+ * Type order matches SHAPES: 0-I, 1-O, 2-T, 3-S, 4-Z, 5-J, 6-L.
  *
  * @param tiles Tiles sprite sheet, or NULL for the colour fallback.
  * @param type Piece type (0-6).
@@ -412,8 +416,8 @@ STATUS piece_rotate_cw(PIECE *piece) {
  */
 void piece_draw_tile(ALLEGRO_BITMAP *tiles, int type, float x, float y,
     float size, float alpha) {
-    static const int tile_x[PIECE_TYPES] = { 2, 10, 18, 26, 34, 42, 104 };
-    static const int tile_y[PIECE_TYPES] = { 100, 100, 100, 100, 100, 100, 100 };
+    static const int tile_x[PIECE_TYPES] = { 26, 42, 18, 34, 26, 2, 10 };
+    static const int tile_y[PIECE_TYPES] = { 108, 100, 100, 100, 100, 100, 100 };
 
     if (type < 0 || type >= PIECE_TYPES) {
         return;

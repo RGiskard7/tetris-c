@@ -58,17 +58,23 @@ struct _game {
     int lock_timer;                     ///< Frames the piece has been on the ground
     bool piece_on_ground;               ///< True when piece can't move down
 
+    int clear_timer;                    ///< Line-clear flash countdown (0 = idle)
+    int clear_count;                    ///< Number of rows being cleared
+    int clear_rows[4];                  ///< Indices of the rows being cleared
+
     int das_timer;                      ///< Frames remaining until DAS repeat
     int das_dir;                        ///< DIR_LEFT or DIR_RIGHT when DAS is active
 
     int title_timer;                    ///< Counter for blinking title text
     bool enter_was_down;                ///< Edge detection for ENTER
     bool pause_was_down;                ///< Edge detection for P
+    bool esc_was_down;                  ///< Edge detection for ESC
     bool up_was_down;                   ///< Edge detection for rotate
     bool space_was_down;                ///< Edge detection for hard drop
 
     TOP_ENTRY top_scores[MAX_TOP_SCORES + 1]; ///< Top 5 high scores (+1 for insert)
     bool hs_entry_active;               ///< True when entering initials
+    int hs_entry_rank;                  ///< Index where the new score landed
     int hs_entry_pos;                   ///< Current letter position (0-2)
     int hs_entry_cursor_timer;          ///< Timer for blinking cursor
     char hs_letters[3];                 ///< Letters being entered
@@ -92,13 +98,14 @@ static const int _line_scores[4] = {
 
 static STATUS game_load_top_scores(GAME *game);
 static STATUS game_save_top_scores(GAME *game);
-static void   game_insert_top_score(GAME *game, int score);
+static int    game_insert_top_score(GAME *game, int score);
 static int    game_highscore_verify(GAME *game, int score);
 static STATUS game_new_game(GAME *game);
 static STATUS game_spawn_piece(GAME *game);
 static int    game_random_piece(GAME *game, int last_type);
 static int    game_get_gravity(GAME *game);
 static void   game_add_score(GAME *game, int lines_cleared);
+static void   game_lock_piece(GAME *game);
 static void   game_move_ghost(GAME *game, PIECE *ghost);
 static void   game_music_stop(GAME *game);
 static void   game_music_loop(GAME *game, ALLEGRO_SAMPLE *sample);
@@ -174,13 +181,14 @@ static STATUS game_save_top_scores(GAME *game) {
  *
  * @param game Pointer to the game.
  * @param score Score to insert.
+ * @return Index where the score was inserted, or -1 if it did not qualify.
  */
-static void game_insert_top_score(GAME *game, int score) {
+static int game_insert_top_score(GAME *game, int score) {
     int i = 0;
     int j = 0;
 
     if (!game || score <= 0) {
-        return;
+        return -1;
     }
 
     for (i = 0; i <= MAX_TOP_SCORES; i++) {
@@ -190,9 +198,11 @@ static void game_insert_top_score(GAME *game, int score) {
             }
             strcpy(game->top_scores[i].name, "---");
             game->top_scores[i].score = score;
-            break;
+            return i;
         }
     }
+
+    return -1;
 }
 
 /**
@@ -264,12 +274,16 @@ GAME *game_create(void) {
     new_game->lock_timer = 0;
     new_game->piece_on_ground = false;
 
+    new_game->clear_timer = 0;
+    new_game->clear_count = 0;
+
     new_game->das_timer = 0;
     new_game->das_dir = DIR_NONE;
 
     new_game->title_timer = 0;
     new_game->enter_was_down = true;
     new_game->pause_was_down = true;
+    new_game->esc_was_down = true;
     new_game->up_was_down = true;
     new_game->space_was_down = true;
 
@@ -517,6 +531,8 @@ static STATUS game_new_game(GAME *game) {
     game->gravity_timer = 0;
     game->lock_timer = 0;
     game->piece_on_ground = false;
+    game->clear_timer = 0;
+    game->clear_count = 0;
     game->up_was_down = true;
     game->space_was_down = true;
 
@@ -619,6 +635,35 @@ static void game_add_score(GAME *game, int lines_cleared) {
     game->level = game->lines / LINES_PER_LEVEL;
     if (game->level > MAX_LEVEL) {
         game->level = MAX_LEVEL;
+    }
+}
+
+/**
+ * @brief Locks the active piece onto the board.
+ *
+ * If the lock completes one or more lines, starts the flash animation
+ * (the rows blink before being removed by game_update_play). Otherwise
+ * it either ends the game or spawns the next piece right away.
+ *
+ * @param game Pointer to the game.
+ */
+static void game_lock_piece(GAME *game) {
+    int blocks[4][2];
+
+    if (!game) {
+        return;
+    }
+
+    piece_get_blocks(game->piece, blocks);
+    board_lock_piece(game->board, blocks, piece_get_type(game->piece));
+
+    game->clear_count = board_find_full_rows(game->board, game->clear_rows);
+    if (game->clear_count > 0) {
+        game->clear_timer = LINE_CLEAR_DELAY;
+    } else if (board_is_game_over(game->board)) {
+        game->state = STATE_OVER;
+    } else {
+        game_spawn_piece(game);
     }
 }
 
@@ -736,13 +781,21 @@ static void game_update_audio(GAME *game) {
  */
 STATUS game_update(GAME *game, ALLEGRO_KEYBOARD_STATE *key) {
     bool enter_now = false;
+    bool esc_now = false;
+    bool esc_edge = false;
 
     if (!game || !key) {
         return ERROR;
     }
 
-    // ESC sale del juego salvo durante la partida (donde pausa)
-    if (game->state != STATE_PLAY && al_key_down(key, ALLEGRO_KEY_ESCAPE)) {
+    // ESC sale del juego desde los menus (no durante la partida, donde
+    // pausa). Con deteccion de flanco: una pulsacion mantenida no se cuela
+    // al frame siguiente y cierra el juego tras pausar con ESC.
+    esc_now = al_key_down(key, ALLEGRO_KEY_ESCAPE);
+    esc_edge = esc_now && !game->esc_was_down;
+    game->esc_was_down = esc_now;
+    if (game->state != STATE_PLAY && game->state != STATE_HIGHSCORE
+        && esc_edge) {
         game->done = true;
         return OK;
     }
@@ -782,7 +835,8 @@ STATUS game_update(GAME *game, ALLEGRO_KEYBOARD_STATE *key) {
                     game->hs_entry_cursor_timer = 0;
                     game->hs_entry_delay = 45;
                     game->hs_enter_needs_release = true;
-                    game_insert_top_score(game, game->score);
+                    game->hs_entry_rank =
+                        game_insert_top_score(game, game->score);
                     game->state = STATE_HIGHSCORE;
                 } else {
                     game->state = STATE_TITLE;
@@ -824,6 +878,25 @@ static STATUS game_update_play(GAME *game, ALLEGRO_KEYBOARD_STATE *key) {
 
     if (!game || !key) {
         return ERROR;
+    }
+
+    // line-clear flash: freeze play while the completed rows blink, then
+    // remove them, score, and continue (or end the game)
+    if (game->clear_timer > 0) {
+        game->clear_timer--;
+        if (game->clear_timer == 0) {
+            cleared = board_clear_lines(game->board);
+            if (cleared > 0) {
+                game_add_score(game, cleared);
+            }
+            game->clear_count = 0;
+            if (board_is_game_over(game->board)) {
+                game->state = STATE_OVER;
+            } else {
+                game_spawn_piece(game);
+            }
+        }
+        return OK;
     }
 
     // pausa con deteccion de flanco
@@ -918,18 +991,7 @@ static STATUS game_update_play(GAME *game, ALLEGRO_KEYBOARD_STATE *key) {
         }
 
         // bloquear inmediatamente
-        piece_get_blocks(game->piece, blocks);
-        board_lock_piece(game->board, blocks,
-            piece_get_type(game->piece));
-        cleared = board_clear_lines(game->board);
-        if (cleared > 0) {
-            game_add_score(game, cleared);
-        }
-        if (board_is_game_over(game->board)) {
-            game->state = STATE_OVER;
-        } else {
-            game_spawn_piece(game);
-        }
+        game_lock_piece(game);
         game->space_was_down = space;
         return OK;
     }
@@ -954,31 +1016,29 @@ static STATUS game_update_play(GAME *game, ALLEGRO_KEYBOARD_STATE *key) {
         piece_get_blocks(game->piece, blocks);
 
         if (board_check_collision(game->board, blocks)) {
-            // la pieza toca suelo, deshacer el movimiento
-            piece_move(game->piece, 0, -1);
-            game->piece_on_ground = true;
-        } else {
-            game->piece_on_ground = false;
-            game->lock_timer = 0;
+            piece_move(game->piece, 0, -1); // toca suelo, deshacer
         }
+    }
+
+    // reevaluar si la pieza sigue apoyada cada frame: si la mueves de lado
+    // sobre un hueco deja de estarlo, evitando que se fije en el aire (el
+    // lock delay es mas corto que el intervalo de gravedad en niveles bajos)
+    piece_move(game->piece, 0, 1);
+    piece_get_blocks(game->piece, blocks);
+    if (board_check_collision(game->board, blocks)) {
+        piece_move(game->piece, 0, -1);
+        game->piece_on_ground = true;
+    } else {
+        piece_move(game->piece, 0, -1);
+        game->piece_on_ground = false;
+        game->lock_timer = 0;
     }
 
     // lock delay: si la pieza esta en el suelo, esperar LOCK_DELAY frames
     if (game->piece_on_ground) {
         game->lock_timer++;
         if (game->lock_timer >= LOCK_DELAY) {
-            piece_get_blocks(game->piece, blocks);
-            board_lock_piece(game->board, blocks,
-                piece_get_type(game->piece));
-            cleared = board_clear_lines(game->board);
-            if (cleared > 0) {
-                game_add_score(game, cleared);
-            }
-            if (board_is_game_over(game->board)) {
-                game->state = STATE_OVER;
-            } else {
-                game_spawn_piece(game);
-            }
+            game_lock_piece(game);
         }
     }
 
@@ -1081,10 +1141,13 @@ static STATUS game_update_highscore(GAME *game, ALLEGRO_KEYBOARD_STATE *key) {
         }
     } else if (al_key_down(key, ALLEGRO_KEY_ENTER)) {
         if (!enter_held) {
-            game->top_scores[0].name[0] = game->hs_letters[0];
-            game->top_scores[0].name[1] = game->hs_letters[1];
-            game->top_scores[0].name[2] = game->hs_letters[2];
-            game->top_scores[0].name[3] = '\0';
+            int rank = game->hs_entry_rank;
+            if (rank >= 0 && rank <= MAX_TOP_SCORES) {
+                game->top_scores[rank].name[0] = game->hs_letters[0];
+                game->top_scores[rank].name[1] = game->hs_letters[1];
+                game->top_scores[rank].name[2] = game->hs_letters[2];
+                game->top_scores[rank].name[3] = '\0';
+            }
             game_save_top_scores(game);
             game->hs_entry_active = false;
             game->state = STATE_TITLE;
@@ -1125,7 +1188,9 @@ STATUS game_render(GAME *game) {
 
     board_print(game->board, game->playfield, game->tiles);
 
-    if (game->state == STATE_PLAY || game->state == STATE_PAUSE) {
+    // active piece and its ghost (not while lines are flashing)
+    if ((game->state == STATE_PLAY || game->state == STATE_PAUSE)
+        && game->clear_timer == 0) {
         // ghost piece
         ghost = piece_create();
         if (ghost) {
@@ -1140,6 +1205,23 @@ STATUS game_render(GAME *game) {
 
         // active piece
         piece_print(game->piece, game->tiles, false);
+    }
+
+    // line-clear flash: the completed rows blink white before disappearing
+    if (game->clear_timer > 0 && (game->clear_timer / 3) % 2 == 0) {
+        int i = 0;
+        float x0 = (float) BOARD_X0;
+        float y0 = (float) BOARD_Y0;
+        float cs = (float) CELL_SIZE;
+
+        for (i = 0; i < game->clear_count; i++) {
+            int row = game->clear_rows[i];
+            if (row >= BOARD_HIDDEN) {
+                float ry = y0 + (row - BOARD_HIDDEN) * cs;
+                al_draw_filled_rectangle(x0, ry, x0 + BOARD_COLS * cs,
+                    ry + cs, al_map_rgb(255, 255, 255));
+            }
+        }
     }
 
     game_print_preview(game);

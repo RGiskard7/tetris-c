@@ -106,6 +106,9 @@
 // Lock delay in frames (brief, as in NES)
 #define LOCK_DELAY       15
 
+// Line clear flash: frames the completed rows blink before being removed
+#define LINE_CLEAR_DELAY 18
+
 // Colours
 #define COLOR_BG        al_map_rgb(0, 0, 0)
 #define COLOR_BOARD_BG  al_map_rgb(20, 20, 20)
